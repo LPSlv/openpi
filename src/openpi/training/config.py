@@ -272,6 +272,7 @@ class LeRobotAlohaDataConfig(DataConfigFactory):
             data_transforms=data_transforms,
             model_transforms=model_transforms,
             action_sequence_keys=self.action_sequence_keys,
+            use_quantile_norm=model_config.model_type != ModelType.PI0,
         )
 
 
@@ -346,6 +347,7 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
+            use_quantile_norm=model_config.model_type != ModelType.PI0,
         )
 
 
@@ -403,7 +405,7 @@ class RLDSDroidDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
-            use_quantile_norm=model_config.model_type == ModelType.PI0_FAST,
+            use_quantile_norm=model_config.model_type != ModelType.PI0,
             rlds_data_dir=self.rlds_data_dir,
             action_space=self.action_space,
             filter_dict_path=self.filter_dict_path,

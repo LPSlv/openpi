@@ -157,7 +157,7 @@ def _gripper_from_angular_inv(value):
 
 
 def _decode_aloha(data: dict, *, adapt_to_pi: bool = False) -> dict:
-    # state is [left_arm_joint_angles, right_arm_joint_angles, left_arm_gripper, right_arm_gripper]
+    # state is [left_arm_joint_angles, left_arm_gripper, right_arm_joint_angles, right_arm_gripper]
     # dim sizes: [6, 1, 6, 1]
     state = np.asarray(data["state"])
     state = _decode_state(state, adapt_to_pi=adapt_to_pi)

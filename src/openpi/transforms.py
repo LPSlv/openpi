@@ -247,15 +247,15 @@ class AbsoluteActions(DataTransformFn):
 @dataclasses.dataclass(frozen=True)
 class TokenizePrompt(DataTransformFn):
     tokenizer: _tokenizer.PaligemmaTokenizer
-    pi05: bool = False
+    discrete_state_input: bool = False
 
     def __call__(self, data: DataDict) -> DataDict:
         if (prompt := data.pop("prompt", None)) is None:
             raise ValueError("Prompt is required")
 
-        if self.pi05:
+        if self.discrete_state_input:
             if (state := data.get("state", None)) is None:
-                raise ValueError("State is required for Pi05 tokenization")
+                raise ValueError("State is required.")
         else:
             state = None
 

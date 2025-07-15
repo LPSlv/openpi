@@ -415,6 +415,50 @@ class RLDSDroidDataConfig(DataConfigFactory):
 
 
 @dataclasses.dataclass(frozen=True)
+class LeRobotDROIDDataConfig(DataConfigFactory):
+    """
+    Example data config for custom DROID dataset in LeRobot format.
+    To convert your custom DROID dataset (<10s of hours) to LeRobot format, see examples/droid/convert_droid_data_to_lerobot.py
+    """
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "observation/exterior_image_1_left": "exterior_image_1_left",
+                        "observation/exterior_image_2_left": "exterior_image_2_left",
+                        "observation/wrist_image_left": "wrist_image_left",
+                        "observation/joint_position": "joint_position",
+                        "observation/gripper_position": "gripper_position",
+                        "actions": "actions",
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+        data_transforms = _transforms.Group(
+            inputs=[droid_policy.DroidInputs(model_type=model_config.model_type)],
+            outputs=[droid_policy.DroidOutputs()],
+        )
+        # We assume joint position actions, so we should apply a delta transform.
+        delta_action_mask = _transforms.make_bool_mask(7, -1)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class TrainConfig:
     # Name of the config. Must be unique. Will be used to reference this config.
     name: tyro.conf.Suppress[str]
@@ -779,7 +823,10 @@ _CONFIGS = [
     # Fine-tuning DROID configs.
     #
     TrainConfig(
-        name="pi0_fast_droid_finetune",
+        # This config is for fine-tuning pi0-FAST-base on the *full* DROID dataset.
+        # We use RLDS data loading to make training on this large dataset tractable.
+        # For fine-tuning on your own DROID dataset, see below.
+        name="pi0_fast_full_droid_finetune",
         model=pi0_fast.Pi0FASTConfig(
             action_dim=8,
             action_horizon=16,
@@ -804,6 +851,30 @@ _CONFIGS = [
         save_interval=5000,
         keep_period=20_000,
         num_workers=0,  # Important: RLDS DataLoader requires num_workers=0, handles multi-processing internally
+    ),
+    TrainConfig(
+        # This config is for fine-tuning pi05-DROID on a custom (smaller) DROID dataset.
+        # Here, we use LeRobot data format (like for all other fine-tuning examples)
+        # To convert your custom DROID dataset (<10s of hours) to LeRobot format, see examples/droid/convert_droid_data_to_lerobot.py
+        name="pi05_droid_finetune",
+        model=pi0.Pi0Config(
+            pi05=True,
+            action_dim=32,  # pi05 is trained with 32-dim actions
+            action_horizon=16,
+        ),
+        data=LeRobotDROIDDataConfig(
+            # Replace with your custom DROID LeRobot dataset repo id.
+            repo_id="your_hf_username/my_droid_dataset",
+            base_config=DataConfig(prompt_from_task=True),
+            assets=AssetsConfig(
+                # Important: reuse the original DROID norm stats during fine-tuning!
+                assets_dir="gs://openpi-assets-preview/checkpoints/pi05_droid/assets",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets-preview/checkpoints/pi05_droid/params"),
+        num_train_steps=20_000,
+        batch_size=32,
     ),
     #
     # ALOHA Sim configs. This config is used to demonstrate how to train on a simple simulated environment.

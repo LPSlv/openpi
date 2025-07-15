@@ -745,10 +745,7 @@ _CONFIGS = [
             decay_steps=1_000_000,
             decay_lr=5e-5,
         ),
-        optimizer=_optimizer.AdamW(
-            weight_decay=0.0,
-            clip_gradient_norm=1.0,
-        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
         weight_loader=weight_loaders.CheckpointWeightLoader(
             "gs://openpi-assets-preview/checkpoints/pi05_may21_280k_v1/params"

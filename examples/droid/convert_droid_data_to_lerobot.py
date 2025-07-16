@@ -77,7 +77,7 @@ def main(data_dir: str, *, push_to_hub: bool = False):
             },
             "actions": {
                 "dtype": "float32",
-                "shape": (8,),  # We will use joint *position* actions here (7D) + gripper position (1D)
+                "shape": (8,),  # We will use joint *velocity* actions here (7D) + gripper position (1D)
                 "names": ["actions"],
             },
         },
@@ -138,8 +138,9 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                     "gripper_position": np.asarray(
                         step["observation"]["robot_state"]["gripper_position"][None], dtype=np.float32
                     ),
+                    # Important: we use joint velocity actions here since pi05-droid was pre-trained on joint velocity actions
                     "actions": np.concatenate(
-                        [step["action"]["joint_position"], step["action"]["gripper_position"][None]], dtype=np.float32
+                        [step["action"]["joint_velocity"], step["action"]["gripper_position"][None]], dtype=np.float32
                     ),
                     "task": language_instruction,
                 }

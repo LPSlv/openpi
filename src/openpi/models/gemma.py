@@ -316,10 +316,11 @@ class Block(nn.Module):
         for i, (x, config) in enumerate(zip(xs, self.configs, strict=True)):
             if x is not None:
                 x, gate = RMSNorm(name=_name("pre_ffw_norm", i))(x, adarms_cond[i])  # noqa: PLW2901
-                x = FeedForward(  # noqa: PLW2901
+                x = lora.FeedForward(  # noqa: PLW2901
                     features=config.width,
                     hidden_dim=config.mlp_dim,
                     name=_name("mlp", i),
+                    lora_config=config.lora_configs.get("ffn"),
                 )(x)
             out.append(x)
             gates.append(gate if x is not None else None)

@@ -93,7 +93,7 @@ class DataConfig:
     rlds_data_dir: str | None = None
     # Action space for DROID dataset.
     action_space: droid_rlds_dataset.DroidActionSpace | None = None
-    # Path to the filter dictionary file for DROID dataset
+    # Path to the data filter file for DROID dataset
     filter_dict_path: str | None = None
 
 
@@ -350,7 +350,7 @@ class RLDSDroidDataConfig(DataConfigFactory):
     # to tuples denoting ranges of time steps to keep (start, end). Episodes are uniquely identified with
     # f"{recording_folderpath}--{file_path}", both of which are present in the RLDS episode metadata.
     # Path to the filter dictionary file.
-    filter_dict_path: str | None = None
+    filter_dict_path: str | None = "gs://openpi-assets/droid/droid_sample_ranges_v1_0_1.json"
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
@@ -693,8 +693,6 @@ _CONFIGS = [
             # Set this to the path to your DROID RLDS dataset (the parent directory of the `droid` directory).
             rlds_data_dir="<path_to_droid_rlds_dataset>",
             action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
-            # Set this to the path for whatever filtering json you wish to use (or None)
-            filter_dict_path="<path_to_filtering_json_or_None>",
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_fast_base/params"),
         lr_schedule=_optimizer.CosineDecaySchedule(

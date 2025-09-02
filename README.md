@@ -12,6 +12,7 @@ This is an experiment: $\pi_0$ was developed for our own robots, which differ fr
 
 ## Updates
 
+- [Sept 2025]: We have added an [improved idle filter](examples/droid/README_train.md#data-filtering) for DROID training.
 - [Jun 2025]: We have added [instructions](examples/droid/README_train.md) for using `openpi` to train VLAs on the full [DROID dataset](https://droid-dataset.github.io/). This is an approximate open-source implementation of the training pipeline used to train pi0-FAST-DROID. 
 
 

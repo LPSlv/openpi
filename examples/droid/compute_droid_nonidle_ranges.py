@@ -1,8 +1,9 @@
 """
-Iterates through the DROID dataset and a json mapping from episode unique IDs to ranges of time steps
-that should not be filtered out (all others are).
+Iterates through the DROID dataset and creates a json mapping from episode unique IDs to ranges of time steps
+that should be sampled during training (all others are filtered out).
 
-Specifically, we look for ranges of consecutive steps that contain at most min_idle_len consecutive idle frames
+Filtering logic:
+We look for ranges of consecutive steps that contain at most min_idle_len consecutive idle frames
 (default to 7 -- as most DROID action-chunking policies run the first 8 actions generated in each chunk, filtering
 this way means the policy will not get stuck outputting stationary actions). Additionally, we also only keep non-idle
 ranges of length at least min_non_idle_len (default to 16 frames = ~1 second), while also removing the last

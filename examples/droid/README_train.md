@@ -30,19 +30,13 @@ First, change the `rlds_data_dir` path in your `TrainConfig` to the directory th
 
 Then, compute normalization statistics (this will take ~10 minutes):
 ```bash
-uv run --group rlds scripts/compute_norm_stats.py --config-name pi0_fast_droid_finetune --max-frames 10_000_000
+uv run --group rlds scripts/compute_norm_stats.py --config-name pi0_fast_droid_finetune
 ```
 
 Run training:
 ```bash
-uv run --group rlds scripts/train.py pi0_fast_droid_finetune --exp-name=my_experiment --overwrite
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run --group rlds scripts/train.py pi0_fast_droid_finetune --exp-name=my_experiment --overwrite
 ```
-
-By default, training uses no filtering. Alternatively, you can use a custom filtering scheme by providing a json that maps from episode keys to a list of time step ranges (denoted as a tuple of start and end time step indicies) in that episode you wish to keep. The episode key is a unique ID defined as `f"{recording_folderpath}--{file_path}"`. We choose this convention because both paths are easily accessible in the DROID RLDS episodes' metadata.
-
-We provide an example of such a filtering scheme in [filtering/compute_droid_nonidle_ranges.py](examples/droid/filtering/compute_droid_nonidle_ranges.py), which is significantly more aggressive than the default (and thus leads to policies that take significantly fewer idle actions). We recommend using the filter produced by this script, and have also provided a copy of the filter [here](https://huggingface.co/KarlP/droid#filtering-data) specifically for `droid/1.0.1`.
-
-The filter json you wish to use can be specified by modifying the line `filter_dict_path="<path_to_filter_dict>"` in [src/openpi/training/config.py](src/openpi/training/config.py).
 
 **Note**: The original pi0-FAST-DROID model was trained with joint velocity actions.
 Joint velocity actions are not compatible with simulated evaluation environments (much harder to simulate). 
@@ -56,6 +50,14 @@ If you start from PaliGemma instead of pi0 initialization, plan with ~5 days on 
 
 We have experimented with LoRA for cheaper finetuning, but haven't found the policies to perform well so far.
 
+
+## Data Filtering
+
+Like any diverse real-robot dataset, the DROID dataset isn't perfectly "clean" and we have found data filtering to significantly improve policy performance. Concretely, the DROID dataset contains many *idle* timesteps in which the robot does not move (in part due to the VR teleoperation interface that was used during data collection, we will not go into too much detail here). Appropriate filtering of these idle transitions can improve policy performance.
+
+By default, our openpi training recipe implements the same idle filter used to train all pi-DROID models. We implement it by pre-computing which dataset indices to sample during training. You can check [compute_droid_nonidle_ranges.py](examples/droid/compute_droid_nonidle_ranges.py) for how we compute these indices. Roughly speaking, we filter any time steps for which the next chunk of actions would be largely idle. During training, our code automatically pulls our pre-computed list of indices from cloud storage and applies them. If you want to modify the idle filter / create your custom sampling logic, you can modify our script to generate a new index list and provide it via the `filter_dict_path="<path_to_filter_dict>"` argument in [src/openpi/training/config.py](src/openpi/training/config.py).
+
+**Note**: our list of filtering indices is only valid for the `droid/1.0.1` dataset mentioned in the download section above, and will not provide valid filtering for any other version of the DROID dataset, so make sure you download the dataset above! If you have a custom DROID version, you can rerun the [compute_droid_nonidle_ranges.py](examples/droid/compute_droid_nonidle_ranges.py) script to generate a new list of sampling indices.
 
 ## RoboArena
 

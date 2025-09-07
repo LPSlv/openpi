@@ -59,7 +59,7 @@ class DroidRldsDataset:
         )
 
         # # Repeat dataset so we never run out of data.
-        # dataset = dataset.repeat()
+        dataset = dataset.repeat()
 
         # Load the filter dictionary if provided.
         # The filter dictionary is a JSON file that maps episode keys to ranges of frames to sample

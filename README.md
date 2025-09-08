@@ -198,10 +198,7 @@ openpi now provides PyTorch implementations of π₀ and π₀.₅ models alongs
 - EMA (exponential moving average) weights during training
 
 ### Setup
-1. Make sure that you have the latest version of all dependencies installed:
-   ```bash
-   uv sync
-   ```
+1. Make sure that you have the latest version of all dependencies installed: `uv sync`
 
 2. Double check that you have transformers 4.53.2 installed: `uv pip show transformers`
 
@@ -209,9 +206,10 @@ openpi now provides PyTorch implementations of π₀ and π₀.₅ models alongs
    ```bash
    cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/site-packages/transformers/
    ```
-   This overwrites several files in the transformers library with necessary model changes.
 
-**WARNING**: With the default uv link mode (hardlink), this will permanently affect the transformers library in your uv cache. To fully undo this operation, you must run `uv cache clean transformers`.
+This overwrites several files in the transformers library with necessary model changes: 1) supporting AdaRMS, 2) correctly controlling the precision of activations, and 3) allowing the KV cache to be used without being updated.
+
+**WARNING**: With the default uv link mode (hardlink), this will permanently affect the transformers library in your uv cache, meaning the changes will survive reinstallations of transformers and could even propagate to other projects that use transformers. To fully undo this operation, you must run `uv cache clean transformers`.
 
 ### Converting JAX Models to PyTorch
 

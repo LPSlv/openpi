@@ -5,7 +5,7 @@ openpi holds open-source models and packages for robotics, published by the [Phy
 Currently, this repo contains three types of models:
 - the [π₀ model](https://www.physicalintelligence.company/blog/pi0), a flow-based vision-language-action model (VLA).
 - the [π₀-FAST model](https://www.physicalintelligence.company/research/fast), an autoregressive VLA, based on the FAST action tokenizer.
-- the [π₀.₅ model](https://www.physicalintelligence.company/blog/pi05), an upgraded version of π₀ with better open-world generalization.
+- the [π₀.₅ model](https://www.physicalintelligence.company/blog/pi05), an upgraded version of π₀ with better open-world generalization trained with [knowledge insulation](https://www.physicalintelligence.company/research/knowledge_insulation).
 
 For all models, we provide _base model_ checkpoints, pre-trained on 10k+ hours of robot data, and examples for using them out of the box or fine-tuning them to your own datasets.
 
@@ -78,7 +78,7 @@ We also provide "expert" checkpoints for various robot platforms and tasks. Thes
 | $\pi_0$-ALOHA-tupperware | Inference   | $\pi_0$ model fine-tuned on internal [ALOHA](https://tonyzhaozh.github.io/aloha/) data: can unpack food from a tupperware container                                                                                                             | `gs://openpi-assets/checkpoints/pi0_aloha_tupperware` |
 | $\pi_0$-ALOHA-pen-uncap  | Inference   | $\pi_0$ model fine-tuned on public [ALOHA](https://dit-policy.github.io/) data: can uncap a pen                                                                                                          | `gs://openpi-assets/checkpoints/pi0_aloha_pen_uncap`  |
 | $\pi_{0.5}$-LIBERO      | Inference   | $\pi_{0.5}$ model fine-tuned for the [LIBERO](https://libero-project.github.io/datasets) benchmark: gets state-of-the-art performance (see [LIBERO README](examples/libero/README.md)) | `gs://openpi-assets/checkpoints/pi05_libero`      |
-| $\pi_{0.5}$-DROID      | Inference / Fine-Tuning | $\pi_{0.5}$ model fine-tuned on the [DROID dataset](https://droid-dataset.github.io/): fast inference and good language-following | `gs://openpi-assets/checkpoints/pi05_droid`      |
+| $\pi_{0.5}$-DROID      | Inference / Fine-Tuning | $\pi_{0.5}$ model fine-tuned on the [DROID dataset](https://droid-dataset.github.io/) with [knowledge insulation](https://www.physicalintelligence.company/research/knowledge_insulation): fast inference and good language-following | `gs://openpi-assets/checkpoints/pi05_droid`      |
 
 
 By default, checkpoints are automatically downloaded from `gs://openpi-assets` and are cached in `~/.cache/openpi` when needed. You can overwrite the download path by setting the `OPENPI_DATA_HOME` environment variable.
@@ -94,8 +94,8 @@ from openpi.training import config as _config
 from openpi.policies import policy_config
 from openpi.shared import download
 
-config = _config.get_config("pi0_fast_droid")
-checkpoint_dir = download.maybe_download("gs://openpi-assets/checkpoints/pi0_fast_droid")
+config = _config.get_config("pi05_droid")
+checkpoint_dir = download.maybe_download("gs://openpi-assets/checkpoints/pi05_droid")
 
 # Create a trained policy.
 policy = policy_config.create_trained_policy(config, checkpoint_dir)
@@ -198,16 +198,20 @@ openpi now provides PyTorch implementations of π₀ and π₀.₅ models alongs
 - EMA (exponential moving average) weights during training
 
 ### Setup
-1. Upgrade the transformers library to 4.53.2 and torch to 2.7.1
-   - The required version is already specified in pyproject.toml
-   - If you set up your environment previously, reinstall it to ensure you have transformers 4.53.2 and torch 2.7.1
-   - You can verify the version with `uv pip show transformers` and `uv pip show torch`
+1. Make sure that you have the latest version of all dependencies installed:
+   ```bash
+   uv sync
+   ```
 
-2. Apply the transformers library patches
+2. Double check that you have transformers 4.53.2 installed: `uv pip show transformers`
+
+3. Apply the transformers library patches:
    ```bash
    cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/site-packages/transformers/
    ```
-   This copies the custom model implementations needed to match our JAX implementation.
+   This overwrites several files in the transformers library with necessary model changes.
+
+**WARNING**: With the default uv link mode (hardlink), this will permanently affect the transformers library in your uv cache. To fully undo this operation, you must run `uv cache clean transformers`.
 
 ### Converting JAX Models to PyTorch
 

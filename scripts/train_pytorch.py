@@ -180,7 +180,7 @@ def save_checkpoint(model, optimizer, global_step, config, is_main, data_config)
         # save norm stats
         norm_stats = data_config.norm_stats
         if norm_stats is not None and data_config.asset_id is not None:
-            _normalize.save(tmp_ckpt_dir / data_config.asset_id, norm_stats)
+            _normalize.save(tmp_ckpt_dir / "assets" / data_config.asset_id, norm_stats)
 
         # Atomically move temp directory to final location
         if final_ckpt_dir.exists():

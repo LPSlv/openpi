@@ -17,6 +17,7 @@ class EnvMode(enum.Enum):
     ALOHA = "aloha"
     ALOHA_SIM = "aloha_sim"
     DROID = "droid"
+    UR5 = "ur5"
     LIBERO = "libero"
 
 
@@ -28,6 +29,10 @@ class Checkpoint:
     config: str
     # Checkpoint directory (e.g., "checkpoints/pi0_aloha_sim/exp/10000").
     dir: str
+    # Optional override for assets directory to load norm stats from.
+    assets_dir: str | None = None
+    # Optional override for asset id to load norm stats.
+    asset_id: str | None = None
 
 
 @dataclasses.dataclass
@@ -69,6 +74,12 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
         config="pi05_droid",
         dir="gs://openpi-assets/checkpoints/pi05_droid",
     ),
+    EnvMode.UR5: Checkpoint(
+        config="pi05_ur5",
+        dir="gs://openpi-assets/checkpoints/pi05_base",
+        assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+        asset_id="ur5e",
+    ),
     EnvMode.LIBERO: Checkpoint(
         config="pi05_libero",
         dir="gs://openpi-assets/checkpoints/pi05_libero",
@@ -79,9 +90,19 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
 def create_default_policy(env: EnvMode, *, default_prompt: str | None = None) -> _policy.Policy:
     """Create a default policy for the given environment."""
     if checkpoint := DEFAULT_CHECKPOINT.get(env):
-        return _policy_config.create_trained_policy(
-            _config.get_config(checkpoint.config), checkpoint.dir, default_prompt=default_prompt
+        policy = _policy_config.create_trained_policy(
+            _config.get_config(checkpoint.config),
+            checkpoint.dir,
+            default_prompt=default_prompt,
+            assets_dir=checkpoint.assets_dir,
+            asset_id=checkpoint.asset_id,
         )
+        # Swap transforms if UR5 (only if not already using pi05_ur5 config which has UR5 transforms built-in)
+        if env == EnvMode.UR5 and checkpoint.config != "pi05_ur5":
+            from openpi.policies import ur5_policy
+
+            policy = policy.with_io(ur5_policy.UR5Inputs(model_type=policy.model_type), ur5_policy.UR5Outputs())
+        return policy
     raise ValueError(f"Unsupported environment mode: {env}")
 
 
@@ -89,9 +110,19 @@ def create_policy(args: Args) -> _policy.Policy:
     """Create a policy from the given arguments."""
     match args.policy:
         case Checkpoint():
-            return _policy_config.create_trained_policy(
-                _config.get_config(args.policy.config), args.policy.dir, default_prompt=args.default_prompt
+            policy = _policy_config.create_trained_policy(
+                _config.get_config(args.policy.config),
+                args.policy.dir,
+                default_prompt=args.default_prompt,
+                assets_dir=args.policy.assets_dir,
+                asset_id=args.policy.asset_id,
             )
+            # Swap transforms if UR5 (only if not already using pi05_ur5 config which has UR5 transforms built-in)
+            if args.env == EnvMode.UR5 and args.policy.config != "pi05_ur5":
+                from openpi.policies import ur5_policy
+
+                policy = policy.with_io(ur5_policy.UR5Inputs(model_type=policy.model_type), ur5_policy.UR5Outputs())
+            return policy
         case Default():
             return create_default_policy(args.env, default_prompt=args.default_prompt)
 

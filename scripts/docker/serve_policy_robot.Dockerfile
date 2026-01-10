@@ -18,9 +18,13 @@ WORKDIR /app
 # - Build tools: needed for compiling Python packages
 # - libusb-1.0-0: required for RealSense camera access
 # - libgl1, libglib2.0-0: OpenCV dependencies
+# - libxext6, libxrender1, libsm6: X11 display support for OpenCV imshow
+# - libgtk-3-0, libgdk-pixbuf2.0-0: GTK+ runtime libraries for OpenCV GUI (cv2.imshow)
 RUN apt-get update && apt-get install -y \
     git git-lfs linux-headers-generic build-essential clang \
     curl wget libgl1 libglib2.0-0 libusb-1.0-0 \
+    libxext6 libxrender1 libsm6 \
+    libgtk-3-0 libgdk-pixbuf2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 
 # Configure uv to use copy mode (for bind mounts) and place venv outside /app
@@ -47,10 +51,12 @@ RUN /.venv/bin/python -c "import transformers, os; print(os.path.dirname(transfo
 
 # Install additional runtime dependencies for robot control
 # - pyrealsense2: RealSense camera SDK
-# - opencv-python: Image processing
+# - opencv-python: Image processing (with GUI support, requires GTK libraries above)
 # - ur-rtde: UR robot RTDE interface (rtde_receive, rtde_control)
 # - numpy: Numerical operations
 # - polars: Data processing
+# Note: opencv-python wheels may not have GTK support. If cv2.imshow fails,
+# the script will gracefully disable display and continue running.
 RUN /.venv/bin/python -m ensurepip --upgrade && \
     /.venv/bin/python -m pip install --no-cache-dir -U pip setuptools wheel && \
     /.venv/bin/python -m pip install --no-cache-dir \
@@ -59,20 +65,19 @@ RUN /.venv/bin/python -m ensurepip --upgrade && \
 ENV PATH=/.venv/bin:$PATH
 
 # Pre-download checkpoint at build time to avoid runtime downloads
-# This downloads the checkpoint specified in SERVER_ARGS (default: pi05_droid)
-# and its dependencies (pi05_base) to /root/.cache/openpi/
+# This downloads the checkpoint specified in SERVER_ARGS (default: pi05_base for UR5)
 # To download a different checkpoint, modify the CHECKPOINT_URL below
-ARG CHECKPOINT_URL="gs://openpi-assets/checkpoints/pi05_droid"
-ARG BASE_CHECKPOINT_URL="gs://openpi-assets/checkpoints/pi05_base"
+ARG CHECKPOINT_URL="gs://openpi-assets/checkpoints/pi05_base"
 COPY scripts/docker/download_checkpoints.py /tmp/download_checkpoints.py
-RUN /.venv/bin/python /tmp/download_checkpoints.py "${BASE_CHECKPOINT_URL}" "${CHECKPOINT_URL}" && \
+RUN /.venv/bin/python /tmp/download_checkpoints.py "${CHECKPOINT_URL}" && \
     rm /tmp/download_checkpoints.py
 
 # ========== Default Runtime Configuration ==========
 # These can be overridden via -e flags when running the container
 
 # Policy server arguments (see scripts/serve_policy.py for options)
-ENV SERVER_ARGS="policy:checkpoint --policy.config=pi05_droid --policy.dir=gs://openpi-assets/checkpoints/pi05_droid"
+# Default to UR5 environment mode for robot control with pi05_base checkpoint and ur5e stats
+ENV SERVER_ARGS="--env=UR5 policy:checkpoint --policy.config=pi05_ur5 --policy.dir=gs://openpi-assets/checkpoints/pi05_base --policy.assets_dir=gs://openpi-assets/checkpoints/pi05_base/assets --policy.asset_id=ur5e"
 
 # Seconds to wait for policy server to start before launching robot bridge
 ENV SERVER_WAIT=6

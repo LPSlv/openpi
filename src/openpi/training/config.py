@@ -20,6 +20,7 @@ import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
+import openpi.policies.ur5_policy as ur5_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
@@ -630,6 +631,25 @@ _CONFIGS = [
                 prompt_from_task=True,
             ),
         ),
+    ),
+    TrainConfig(
+        name="pi05_ur5",
+        model=pi0_config.Pi0Config(action_horizon=15, pi05=True),
+        data=SimpleDataConfig(
+            assets=AssetsConfig(asset_id="ur5e"),  # use UR5e normalization stats
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[ur5_policy.UR5Inputs(model_type=ModelType.PI05)],
+                outputs=[ur5_policy.UR5Outputs()],
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        policy_metadata={
+            # optional hints your bridge can read if you want
+            "control_rate_hz": 20,
+            "action_mode": "delta",
+        },
     ),
     #
     # Fine-tuning Libero configs.

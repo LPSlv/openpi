@@ -109,6 +109,77 @@ class Policy(BasePolicy):
     def metadata(self) -> dict[str, Any]:
         return self._metadata
 
+    @property
+    def model_type(self) -> _model.ModelType:
+        """Get the model type from the policy metadata."""
+        if "model_type" in self._metadata:
+            # Convert string value back to enum if needed
+            model_type_val = self._metadata["model_type"]
+            if isinstance(model_type_val, str):
+                return _model.ModelType(model_type_val)
+            return model_type_val
+        # Fallback: try to get from model config if available
+        # This shouldn't happen in normal usage, but provides a fallback
+        raise AttributeError("model_type not found in policy metadata. This should not happen.")
+
+    def with_io(
+        self,
+        input_transform: _transforms.DataTransformFn | None = None,
+        output_transform: _transforms.DataTransformFn | None = None,
+    ) -> "Policy":
+        """Create a new Policy with swapped input/output transforms.
+
+        The new transforms are prepended to input transforms (applied first) and
+        prepended to output transforms (applied first to outputs).
+
+        Args:
+            input_transform: Optional new input transform to prepend. If None, keeps existing transforms.
+            output_transform: Optional new output transform to prepend. If None, keeps existing transforms.
+
+        Returns:
+            A new Policy instance with the specified transforms.
+        """
+        # Extract existing transforms from the composed transform
+        existing_input_transforms = (
+            list(self._input_transform.transforms) if isinstance(self._input_transform, _transforms.CompositeTransform) else []
+        )
+        existing_output_transforms = (
+            list(self._output_transform.transforms)
+            if isinstance(self._output_transform, _transforms.CompositeTransform)
+            else []
+        )
+
+        # Replace the first input transform (repack transform) and last output transform
+        # This swaps the environment-specific transforms while keeping normalization, etc.
+        new_input_transforms = existing_input_transforms
+        if input_transform is not None:
+            if existing_input_transforms:
+                # Replace first transform (repack transform) with new one
+                new_input_transforms = [input_transform] + existing_input_transforms[1:]
+            else:
+                new_input_transforms = [input_transform]
+
+        new_output_transforms = existing_output_transforms
+        if output_transform is not None:
+            if existing_output_transforms:
+                # Replace last transform (repack transform) with new one
+                new_output_transforms = existing_output_transforms[:-1] + [output_transform]
+            else:
+                new_output_transforms = [output_transform]
+
+        # Don't pass rng - let the Policy constructor create a new one
+        # This avoids issues with reusing JAX keys and works for both JAX and PyTorch models
+        return Policy(
+            self._model,
+            rng=None,  # Will be created by Policy.__init__ if needed
+            transforms=new_input_transforms,
+            output_transforms=new_output_transforms,
+            sample_kwargs=self._sample_kwargs,
+            metadata=self._metadata,
+            pytorch_device=self._pytorch_device,
+            is_pytorch=self._is_pytorch_model,
+        )
+
 
 class PolicyRecorder(_base_policy.BasePolicy):
     """Records the policy's behavior to disk."""

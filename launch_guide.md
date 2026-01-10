@@ -90,6 +90,31 @@ docker run --rm -it \
   openpi_robot
 ```
 
+docker run --rm -it \
+  --gpus=all \
+  --network=host \
+  --device=/dev/bus/usb:/dev/bus/usb \
+  $RUN_DEVICES \
+  --group-add video \
+  -v "$PWD":/app \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  -e DISPLAY=$DISPLAY \
+  --name openpi-robot \
+  -e RS_BASE=137322074310 \
+  -e RS_WRIST=137322075008 \
+  -e PROMPT="bus the table" \
+  -e INFER_PERIOD=0.6 \
+  -e HORIZON_STEPS=8 \
+  -e HOLD_PER_STEP=0.05 \
+  -e MAX_STEP_DEG=0.10 \
+  -e DT=0.05 \
+  -e VEL=0.05 \
+  -e ACC=0.10 \
+  -e LOOKAHEAD=0.10 \
+  -e GAIN=200 \
+  openpi_robot
+
+
 **To enable norm_stats verification** (helps diagnose large action values), add:
 ```bash
   -e VERIFY_NORM_STATS=1 \

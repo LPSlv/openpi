@@ -1,0 +1,53 @@
+{
+  "action_spec": {
+    "desc": "delta_q(6) + absolute gripper_cmd(1)",
+    "dtype": "float32",
+    "shape": [
+      7
+    ]
+  },
+  "blend_radius": 0.01,
+  "created_at": "2026-01-13T15:51:12.153089+00:00",
+  "fps": 10.0,
+  "gripper_default": 0.0,
+  "gripper_waypoints": [
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "jpeg_quality": 95,
+  "kind": "ur5_replay_raw_episode",
+  "movej_acc": 0.3,
+  "movej_vel": 0.2,
+  "prompt": "bus the table",
+  "robotiq_port": 63352,
+  "rs_base_serial": "137322074310",
+  "rs_fps": 30,
+  "rs_h": 480,
+  "rs_w": 640,
+  "rs_wrist_serial": "137322075008",
+  "state_spec": {
+    "desc": "actual_q(6) + gripper_cmd(1)",
+    "dtype": "float32",
+    "shape": [
+      7
+    ]
+  },
+  "ur_ip": "192.10.0.11",
+  "use_gripper": true,
+  "waypoints_path": "raw_episodes/ur5_freedrive_20260113_174847/waypoints.json"
+}

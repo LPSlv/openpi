@@ -12,7 +12,6 @@ import orbax.checkpoint as ocp
 import orbax.checkpoint.future as future
 
 from openpi.shared import array_typing as at
-import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.data_loader as _data_loader
 import openpi.training.utils as training_utils
@@ -110,9 +109,7 @@ def restore_state(
 
 def load_norm_stats(assets_dir: epath.Path | str, asset_id: str) -> dict[str, _normalize.NormStats] | None:
     norm_stats_dir = epath.Path(assets_dir) / asset_id
-    # Download from GCS if needed (maybe_download handles both local and GCS paths)
-    norm_stats_dir_downloaded = _download.maybe_download(str(norm_stats_dir))
-    norm_stats = _normalize.load(norm_stats_dir_downloaded)
+    norm_stats = _normalize.load(norm_stats_dir)
     logging.info(f"Loaded norm stats from {norm_stats_dir}")
     return norm_stats
 

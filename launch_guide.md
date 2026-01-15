@@ -11,24 +11,35 @@ This guide explains how to run the π₀ policy on a UR5 robot arm using Docker.
 
 ## Step 1: Get Camera Serial Number
 
-Create a separate virtual environment for test_setup scripts (to avoid installing hardware packages in the main project venv):
+First, ensure the main project environment is set up with `uv`:
 
 ```bash
 cd /home/ims/openpi
-python3 -m venv test_setup/.venv
-source test_setup/.venv/bin/activate
-pip install pyrealsense2 ur-rtde numpy opencv-python
+GIT_LFS_SKIP_SMUDGE=1 uv sync
+GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
+```
+
+Activate the virtual environment:
+
+```bash
+source .venv/bin/activate
+```
+
+Install additional hardware-specific packages for camera and robot testing:
+
+```bash
+uv pip install pyrealsense2 ur-rtde numpy opencv-python
 ```
 
 Then list connected cameras:
 
 ```bash
-python test_setup/rs_list.py
+python local/test/rs_list.py
 ```
 
 Note the serial number for `RS_BASE`.
 
-**Note:** You can deactivate the test_setup venv after getting the serial number:
+**Note:** You can deactivate the venv after getting the serial number:
 ```bash
 deactivate
 ```
@@ -37,7 +48,7 @@ deactivate
 
 ```bash
 cd /home/ims/openpi
-docker build -t openpi_robot -f scripts/docker/serve_policy_robot.Dockerfile .
+docker build -t openpi_robot -f local/docker/serve_policy_robot.Dockerfile .
 ```
 
 ## Step 3: Run Container
@@ -179,7 +190,7 @@ Save as `launch_robot.sh`:
 #!/bin/bash
 cd /home/ims/openpi
 
-docker build -t openpi_robot -f scripts/docker/serve_policy_robot.Dockerfile .
+docker build -t openpi_robot -f local/docker/serve_policy_robot.Dockerfile .
 
 RUN_DEVICES="$(for d in /dev/video*; do [ -e "$d" ] && printf -- '--device=%s ' "$d"; done)"
 

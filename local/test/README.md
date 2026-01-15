@@ -66,7 +66,7 @@ SERIAL_WRIST = None                         # or set to wrist camera serial
 Edit `ur_read_state.py` and `ur_test_movement.py` to set your robot's IP address:
 
 ```python
-UR_IP = "192.168.1.116"  # Change to your robot's IP
+UR_IP = "192.10.0.11"  # Change to your robot's IP
 ```
 
 ## Usage

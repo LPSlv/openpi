@@ -15,7 +15,7 @@ import time
 import numpy as np
 import rtde_receive
 
-UR_IP = "192.168.1.116"
+UR_IP = "192.10.0.11"
 FREQ = 125.0        # Hz
 PRINT_EVERY = 0.2   # seconds between prints
 RAD2DEG = 180.0 / np.pi

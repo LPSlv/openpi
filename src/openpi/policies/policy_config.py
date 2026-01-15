@@ -5,7 +5,6 @@ from typing import Any
 
 import jax.numpy as jnp
 
-from etils import epath
 import openpi.models.model as _model
 import openpi.policies.policy as _policy
 import openpi.shared.download as download
@@ -23,8 +22,6 @@ def create_trained_policy(
     default_prompt: str | None = None,
     norm_stats: dict[str, transforms.NormStats] | None = None,
     pytorch_device: str | None = None,
-    assets_dir: str | None = None,
-    asset_id: str | None = None,
 ) -> _policy.Policy:
     """Create a policy from a trained checkpoint.
 
@@ -37,13 +34,9 @@ def create_trained_policy(
         default_prompt: The default prompt to use for the policy. Will inject the prompt into the input
             data if it doesn't already exist.
         norm_stats: The norm stats to use for the policy. If not provided, the norm stats will be loaded
-            from the checkpoint directory or assets_dir if specified.
+            from the checkpoint directory.
         pytorch_device: Device to use for PyTorch models (e.g., "cpu", "cuda", "cuda:0").
                       If None and is_pytorch=True, will use "cuda" if available, otherwise "cpu".
-        assets_dir: Optional override for the assets directory to load norm stats from.
-                    If not provided, uses checkpoint_dir/assets.
-        asset_id: Optional override for the asset id to load norm stats. If not provided, uses the
-                  asset_id from the data config.
 
     Note:
         The function automatically detects whether the model is PyTorch-based by checking for the
@@ -64,12 +57,11 @@ def create_trained_policy(
         model = train_config.model.load(_model.restore_params(checkpoint_dir / "params", dtype=jnp.bfloat16))
     data_config = train_config.data.create(train_config.assets_dirs, train_config.model)
     if norm_stats is None:
-        # Override assets_dir and asset_id if provided, otherwise use config defaults
-        stats_assets_dir = assets_dir or str(checkpoint_dir / "assets")
-        stats_asset_id = asset_id or data_config.asset_id
-        if stats_asset_id is None:
+        # We are loading the norm stats from the checkpoint instead of the config assets dir to make sure
+        # that the policy is using the same normalization stats as the original training process.
+        if data_config.asset_id is None:
             raise ValueError("Asset id is required to load norm stats.")
-        norm_stats = _checkpoints.load_norm_stats(epath.Path(stats_assets_dir), stats_asset_id)
+        norm_stats = _checkpoints.load_norm_stats(checkpoint_dir / "assets", data_config.asset_id)
 
     # Determine the device to use for PyTorch models
     if is_pytorch and pytorch_device is None:
@@ -79,10 +71,6 @@ def create_trained_policy(
             pytorch_device = "cuda" if torch.cuda.is_available() else "cpu"
         except ImportError:
             pytorch_device = "cpu"
-
-    # Store model_type in metadata for easy access (convert enum to string for serialization)
-    policy_metadata = dict(train_config.policy_metadata) if train_config.policy_metadata else {}
-    policy_metadata["model_type"] = train_config.model.model_type.value  # Store as string value
 
     return _policy.Policy(
         model,
@@ -100,7 +88,7 @@ def create_trained_policy(
             *repack_transforms.outputs,
         ],
         sample_kwargs=sample_kwargs,
-        metadata=policy_metadata,
+        metadata=train_config.policy_metadata,
         is_pytorch=is_pytorch,
         pytorch_device=pytorch_device if is_pytorch else None,
     )

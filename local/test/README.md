@@ -26,7 +26,7 @@ source $HOME/.local/bin/env
 Then activate the project's virtual environment:
 
 ```bash
-cd /home/ims/openpi
+cd openpi
 source .venv/bin/activate
 ```
 

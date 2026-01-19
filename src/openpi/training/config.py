@@ -724,7 +724,7 @@ _CONFIGS = [
             action_expert_variant="gemma_300m_lora",
         ),
         data=LeRobotUR5DataConfig(
-            repo_id="ims/ur5_bus_the_table",
+            repo_id="LPSlvlv/ur5_busthetable_1",
             # This config lets us reload the UR5 normalization stats from the base model checkpoint.
             # Reloading normalization stats can help transfer pre-trained models to new environments.
             # See the docs/norm_stats.md file for more details.

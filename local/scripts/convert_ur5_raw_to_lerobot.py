@@ -10,6 +10,9 @@ Example:
     --raw_dir raw_episodes \
     --repo_id your_hf_username/ur5_freedrive \
     --fps 10
+
+Note: By default, the script will push the dataset to Hugging Face Hub.
+      To skip pushing, use --no-push-to-hub flag.
 """
 
 from __future__ import annotations
@@ -51,7 +54,7 @@ def main(
     *,
     fps: int = 10,
     robot_type: str = "ur5e",
-    push_to_hub: bool = False,
+    push_to_hub: bool = True,
 ) -> None:
     raw_dir = Path(raw_dir)
     if not raw_dir.exists():
@@ -135,12 +138,16 @@ def main(
         dataset.save_episode()
 
     if push_to_hub:
+        print(f"Pushing dataset to Hugging Face Hub: {repo_id}")
         dataset.push_to_hub(
             tags=["ur5", "ur5e", "freedrive"],
             private=False,
             push_videos=True,
             license="apache-2.0",
         )
+        print(f"Successfully pushed dataset to Hugging Face Hub: {repo_id}")
+    else:
+        print(f"Dataset saved locally at {output_path}. Use --push-to-hub to push to Hugging Face.")
 
 
 if __name__ == "__main__":

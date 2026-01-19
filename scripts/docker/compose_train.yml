@@ -1,0 +1,29 @@
+# Run with:
+# docker compose -f scripts/docker/compose_train.yml up --build
+services:
+  openpi_train:
+    image: openpi_train
+    build:
+      context: ../..
+      dockerfile: scripts/docker/train.Dockerfile
+    init: true
+    tty: true
+    network_mode: host
+    # Mount project directory and checkpoints/data directories
+    volumes:
+      - $PWD:/app
+      - ${OPENPI_DATA_HOME:-~/.cache/openpi}:/openpi_assets
+      - ./checkpoints:/app/checkpoints
+    environment:
+      - OPENPI_DATA_HOME=/openpi_assets
+      - IS_DOCKER=true
+      - XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
+
+    # Comment out this block if not running on a machine with GPUs.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

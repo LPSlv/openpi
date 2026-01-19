@@ -740,7 +740,8 @@ _CONFIGS = [
         ),
         # Load the pi0.5 base model checkpoint.
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        num_train_steps=30_000,
+        num_train_steps=1000,
+        log_interval=10,
         freeze_filter=pi0_config.Pi0Config(
             pi05=True,
             discrete_state_input=False,

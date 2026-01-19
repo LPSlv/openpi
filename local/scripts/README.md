@@ -68,6 +68,29 @@ uv run python openpi/local/scripts/convert_ur5_raw_to_lerobot.py \
 
 ## Fine-Tuning
 
+**Option 1: Docker (recommended for HPC/systems with FFmpeg issues)**
+
+```bash
+# Build and run training container
+docker compose -f scripts/docker/compose_train.yml up --build -d
+
+# Enter container
+docker exec -it scripts-docker-openpi_train-1 /bin/bash
+
+# Inside container, run:
+uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi05_ur5_low_mem_finetune --exp-name=my_experiment --overwrite
+```
+
+**Option 2: Local installation**
+
+**Install uv:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.cargo/bin:$PATH"  # or ~/.local/bin depending on install location
+```
+
+**Commands:**
 ```bash
 # Compute normalization stats
 uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune
@@ -75,10 +98,176 @@ uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune
 # Run training
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi05_ur5_low_mem_finetune --exp-name=my_experiment --overwrite
 
+#To download the checkpoint from HPC
+rsync -avhP \
+  lenardspatriks@rocket.hpc.ut.ee:/gpfs/helios/home/lenardspatriks/openpi/checkpoints/pi05_ur5_low_mem_finetune/ur5_first/99/ \
+  ./openpi_ckpt_99/
+
+
 # Run inference
 uv run scripts/serve_policy.py policy:checkpoint \
   --policy.config=pi05_ur5_low_mem_finetune \
   --policy.dir=checkpoints/pi05_ur5_low_mem_finetune/my_experiment/20000
+```
+
+## Building FFmpeg 7 on HPC
+
+**Goal:** Compile and install FFmpeg 7 into your home directory so Python packages like PyAV (av) can build against it (via pkg-config), without touching system libraries.
+
+**Assumptions:**
+- You are on an HPC login node
+- You have: `gcc`, `make`, `pkg-config`, `python3`
+- You do not have: `nasm`, `yasm`, `cmake`
+
+### 1) Directory Layout and Environment
+
+Use a predictable layout:
+
+```bash
+mkdir -p "$HOME/src" "$HOME/local" "$HOME/ffmpeg7"
+```
+
+### 2) Build NASM Locally (Required)
+
+FFmpeg uses NASM for optimized x86 code. If nasm is missing, FFmpeg build will be slow or may fail depending on config.
+
+**Download + compile NASM:**
+```bash
+cd "$HOME/src"
+
+curl -L -o nasm-2.16.01.tar.xz \
+  https://www.nasm.us/pub/nasm/releasebuilds/2.16.01/nasm-2.16.01.tar.xz
+
+tar -xf nasm-2.16.01.tar.xz
+cd nasm-2.16.01
+
+./configure --prefix="$HOME/local"
+make -j"$(nproc)"
+make install
+```
+
+**Put NASM on PATH (current shell):**
+```bash
+export PATH="$HOME/local/bin:$PATH"
+which nasm
+nasm -v
+```
+
+If `which nasm` still fails, your `make install` did not land in `~/local/bin` and needs investigation.
+
+### 3) Build FFmpeg 7 Locally
+
+**Download source:**
+```bash
+export PREFIX="$HOME/ffmpeg7"
+
+cd "$HOME/src"
+curl -L -o ffmpeg-7.0.2.tar.xz https://ffmpeg.org/releases/ffmpeg-7.0.2.tar.xz
+tar -xf ffmpeg-7.0.2.tar.xz
+cd ffmpeg-7.0.2
+```
+
+**Configure:**
+
+This is a "safe default" build for PyAV:
+- shared libraries enabled (PyAV needs these)
+- static disabled
+- no docs/debug to reduce build time
+- PIC enabled
+
+```bash
+./configure \
+  --prefix="$PREFIX" \
+  --enable-shared \
+  --disable-static \
+  --disable-debug \
+  --disable-doc \
+  --enable-pic
+```
+
+**Compile + install:**
+```bash
+make -j"$(nproc)"
+make install
+```
+
+### 4) Activate FFmpeg 7 for Builds
+
+Export these variables so compilers and pkg-config resolve your local FFmpeg first (must be in same shell as `uv sync`):
+
+```bash
+export PREFIX="$HOME/ffmpeg7"
+export PATH="$PREFIX/bin:$HOME/local/bin:$PATH"
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
+export LD_LIBRARY_PATH="$PREFIX/lib:$LD_LIBRARY_PATH"
+export CPATH="$PREFIX/include:$CPATH"
+export LIBRARY_PATH="$PREFIX/lib:$LIBRARY_PATH"
+```
+
+### 5) Verification Checklist
+
+**Check FFmpeg binary:**
+```bash
+ffmpeg -version | head -n 2
+```
+
+**Check pkg-config resolves your local install:**
+```bash
+pkg-config --variable=prefix libavformat
+pkg-config --modversion libavformat
+```
+
+**Expected:**
+- `prefix` prints `$HOME/ffmpeg7`
+- `version` prints something like `61.x.y` (this is libavformat versioning and is normal)
+
+If prefix is not `$HOME/ffmpeg7`, your `PKG_CONFIG_PATH` is wrong.
+
+### 6) Build Python deps (PyAV via uv)
+
+PyAV builds may be cached by uv. After changing FFmpeg/toolchain, wipe uv build cache:
+
+```bash
+rm -rf ~/.cache/uv/builds-v0
+```
+
+Then run from repo root:
+
+```bash
+cd ~/openpi
+GIT_LFS_SKIP_SMUDGE=1 uv sync
+```
+
+### 7) Runtime Note for Compute Jobs
+
+If your Python code imports `av` on compute nodes, the shared libraries must be discoverable. Set `LD_LIBRARY_PATH` in the job script as well.
+
+**Example snippet to include in Slurm script:**
+```bash
+export PREFIX="$HOME/ffmpeg7"
+export PATH="$PREFIX/bin:$PATH"
+export LD_LIBRARY_PATH="$PREFIX/lib:$LD_LIBRARY_PATH"
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
+```
+
+### 8) Optional: Make the Environment Reusable
+
+Create `~/env_ffmpeg7.sh`:
+
+```bash
+cat > "$HOME/env_ffmpeg7.sh" << 'EOF'
+export PREFIX="$HOME/ffmpeg7"
+export PATH="$PREFIX/bin:$HOME/local/bin:$PATH"
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
+export LD_LIBRARY_PATH="$PREFIX/lib:$LD_LIBRARY_PATH"
+export CPATH="$PREFIX/include:$CPATH"
+export LIBRARY_PATH="$PREFIX/lib:$LIBRARY_PATH"
+EOF
+```
+
+**Use it when needed:**
+```bash
+source "$HOME/env_ffmpeg7.sh"
 ```
 
 ## Defaults

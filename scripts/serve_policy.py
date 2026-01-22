@@ -71,8 +71,8 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
         dir="gs://openpi-assets/checkpoints/pi05_droid",
     ),
     EnvMode.UR5: Checkpoint(
-        config="pi05_ur5",
-        dir="gs://openpi-assets/checkpoints/pi05_base",
+        config="pi05_ur5_low_mem_finetune",
+        dir="checkpoints/pi05_ur5_low_mem_finetune/ur5_first/999",
     ),
     EnvMode.LIBERO: Checkpoint(
         config="pi05_libero",

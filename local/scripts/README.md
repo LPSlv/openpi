@@ -13,7 +13,7 @@ pip install numpy ur-rtde tyro opencv-python pyrealsense2
 ### Record Waypoints
 
 ```bash
-python openpi/local/scripts/ur5_record_freedrive_waypoints.py
+python local/scripts/ur5_record_freedrive_waypoints.py
 ```
 
 1. Robot moves to start position
@@ -25,7 +25,7 @@ python openpi/local/scripts/ur5_record_freedrive_waypoints.py
 ### Replay Waypoints
 
 ```bash
-python openpi/local/scripts/ur5_replay_and_record_raw.py \
+python local/scripts/ur5_replay_and_record_raw.py \
   --waypoints_path raw_episodes/ur5_freedrive_20260113_140635/waypoints.json
 ```
 

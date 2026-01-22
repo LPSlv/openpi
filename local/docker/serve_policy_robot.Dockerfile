@@ -14,6 +14,10 @@ FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
 COPY --from=ghcr.io/astral-sh/uv:0.5.1 /uv /uvx /bin/
 WORKDIR /app
 
+# Set environment variables to prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
 # Install system dependencies
 # - Build tools: needed for compiling Python packages
 # - pkg-config: required for building PyAV (av package)
@@ -22,6 +26,8 @@ WORKDIR /app
 # - libgl1, libglib2.0-0: OpenCV dependencies
 # - libxext6, libxrender1, libsm6: X11 display support for OpenCV imshow
 # - libgtk-3-0, libgdk-pixbuf2.0-0: GTK+ runtime libraries for OpenCV GUI (cv2.imshow)
+# - libxkbcommon-x11-0 + libxcb*: Qt/X11 runtime deps (opencv-python wheels often use Qt HighGUI)
+# - libqt5gui5 ships Qt5 platform plugins on Ubuntu 22.04 (incl. platforms/libqxcb.so)
 RUN apt-get update && apt-get install -y \
     git git-lfs linux-headers-generic build-essential clang \
     curl wget ca-certificates xz-utils pkg-config \
@@ -29,6 +35,11 @@ RUN apt-get update && apt-get install -y \
     libgl1 libglib2.0-0 libusb-1.0-0 \
     libxext6 libxrender1 libsm6 \
     libgtk-3-0 libgdk-pixbuf2.0-0 \
+    libxkbcommon-x11-0 \
+    libxcb1 libxcb-render0 libxcb-shm0 libxcb-randr0 libxcb-xfixes0 \
+    libxcb-keysyms1 libxcb-icccm4 libxcb-image0 libxcb-util1 \
+    libxcb-xinerama0 libxcb-cursor0 \
+    libqt5gui5 libqt5widgets5 \
  && rm -rf /var/lib/apt/lists/*
 
 # Build and install FFmpeg 7 from source (PyAV requires FFmpeg 7)
@@ -81,38 +92,96 @@ RUN /.venv/bin/python -c "import transformers, os; print(os.path.dirname(transfo
 
 # Install additional runtime dependencies for robot control
 # - pyrealsense2: RealSense camera SDK
-# - opencv: Use system opencv (python3-opencv) which has GUI support with GTK
-#   System opencv is installed and made available via PYTHONPATH
+# - opencv-python: OpenCV with GUI support (installed in venv, not system)
 # - ur-rtde: UR robot RTDE interface (rtde_receive, rtde_control)
-# - numpy: Numerical operations
+# - numpy: Numerical operations (installed in venv via uv sync, but ensure it's available)
 # - polars: Data processing
-RUN apt-get update && apt-get install -y \
-    python3-opencv \
-    && rm -rf /var/lib/apt/lists/* && \
-    /.venv/bin/python -m ensurepip --upgrade && \
-    /.venv/bin/python -m pip install --no-cache-dir -U pip setuptools wheel && \
-    /.venv/bin/python -m pip install --no-cache-dir \
-        pyrealsense2 ur-rtde numpy polars
+# Note: We install opencv-python in venv instead of system python3-opencv
+# to avoid conflicts with system numpy (Python 3.10) vs venv numpy (Python 3.11)
 
-# Add system Python site-packages to PYTHONPATH so venv can use system opencv
-ENV PYTHONPATH=/usr/lib/python3/dist-packages:${PYTHONPATH}
+# Install pip tools first
+RUN /.venv/bin/python -m ensurepip --upgrade && \
+    /.venv/bin/python -m pip install --no-cache-dir -U pip setuptools wheel
+
+# Install packages separately for better debugging and caching
+# Install numpy first (dependency for others) - ensure it's installed even if uv sync missed it
+RUN /.venv/bin/python -m pip install --no-cache-dir "numpy<2.0.0" && \
+    /.venv/bin/python -c "import numpy; print(f'✓ numpy {numpy.__version__} installed')"
+
+# Install opencv-python (GUI build).
+# Note: our lockfile also includes opencv-python-headless; if both are installed, whichever was installed last
+# typically "wins" the `cv2` module. We explicitly remove headless variants first so `cv2.imshow` works.
+# IMPORTANT: pin opencv-python to a NumPy<2 compatible build. Newer opencv-python releases pull NumPy>=2,
+# which conflicts with openpi-client's NumPy<2 requirement.
+#
+# Also: ensure a clean OpenCV install (uv sync may bring in opencv-python-headless via other deps).
+RUN /.venv/bin/python -m pip uninstall -y \
+      opencv-python opencv-contrib-python opencv-python-headless opencv-contrib-python-headless \
+    || true
+RUN /.venv/bin/python -m pip install --no-cache-dir "numpy<2.0.0" "opencv-python==4.11.0.86" && \
+    /.venv/bin/python - <<'PY'
+import numpy
+import cv2
+
+print("✓ numpy", numpy.__version__)
+print("✓ cv2 module", getattr(cv2, "__file__", None))
+
+ver = getattr(cv2, "__version__", None)
+if ver is None and hasattr(cv2, "getVersionString"):
+    try:
+        ver = cv2.getVersionString()
+    except Exception:
+        ver = None
+
+print("✓ opencv version", ver)
+print("✓ has imshow", hasattr(cv2, "imshow"))
+
+if hasattr(cv2, "getBuildInformation"):
+    bi = cv2.getBuildInformation()
+    lines = [l for l in bi.split("\n") if "GTK:" in l or "QT:" in l]
+    print(lines)
+else:
+    print("NOTE: cv2.getBuildInformation not available in this build")
+PY
+
+# Install ur-rtde (usually fast)
+RUN /.venv/bin/python -m pip install --no-cache-dir ur-rtde && \
+    echo "✓ ur-rtde installed"
+
+# Install polars (usually fast)
+RUN /.venv/bin/python -m pip install --no-cache-dir polars && \
+    echo "✓ polars installed"
+
+# Install pyrealsense2 last (this is often the slowest, may compile from source)
+RUN echo "Installing pyrealsense2 (this may take several minutes)..." && \
+    /.venv/bin/python -m pip install --no-cache-dir --verbose pyrealsense2 && \
+    echo "✓ pyrealsense2 installed"
+
+# Do NOT add system Python site-packages to PYTHONPATH
+# This was causing conflicts between system numpy (Python 3.10) and venv numpy (Python 3.11)
+# All packages are now installed in the venv, so PYTHONPATH should only include venv paths
 
 ENV PATH=/.venv/bin:$PATH
 
-# Pre-download checkpoint at build time to avoid runtime downloads
-# This downloads the checkpoint specified in SERVER_ARGS (default: pi05_base for UR5)
-# To download a different checkpoint, modify the CHECKPOINT_URL below
-ARG CHECKPOINT_URL="gs://openpi-assets/checkpoints/pi05_base"
-COPY local/scripts/download_checkpoints.py /tmp/download_checkpoints.py
-RUN /.venv/bin/python /tmp/download_checkpoints.py "${CHECKPOINT_URL}" && \
-    rm /tmp/download_checkpoints.py
+# Safer defaults for OpenCV HighGUI inside Docker/X11:
+# - disable MIT-SHM (often causes "X11 connection broke" in containers)
+# - force XCB backend (more reliable than Wayland/other backends inside containers)
+ENV QT_X11_NO_MITSHM=1
+ENV QT_QPA_PLATFORM=xcb
+# IMPORTANT: the `opencv-python` wheel bundles its own Qt plugins under site-packages/cv2/qt/plugins.
+# Forcing Qt to use system plugin directories can cause "xcb found but could not load" due to ABI mismatches.
+ENV QT_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins
+ENV QT_QPA_PLATFORM_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins/platforms
+
+# Checkpoint is provided via bind mount from the host (checkpoints/ directory)
+# No need to download at build time since the workspace is mounted at runtime
 
 # ========== Default Runtime Configuration ==========
 # These can be overridden via -e flags when running the container
 
 # Policy server arguments (see scripts/serve_policy.py for options)
-# Default to UR5 environment mode for robot control with pi05_base checkpoint and ur5e stats
-ENV SERVER_ARGS="--env=UR5 policy:checkpoint --policy.config=pi05_ur5 --policy.dir=gs://openpi-assets/checkpoints/pi05_base"
+# Default to UR5 environment mode for robot control with local checkpoint
+ENV SERVER_ARGS="--env=UR5 policy:checkpoint --policy.config=pi05_ur5_low_mem_finetune --policy.dir=checkpoints/pi05_ur5_low_mem_finetune/ur5_first/999"
 
 # Seconds to wait for policy server to start before launching robot bridge
 ENV SERVER_WAIT=6

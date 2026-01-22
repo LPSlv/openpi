@@ -41,6 +41,11 @@ class WebsocketPolicyServer:
             self._port,
             compression=None,
             max_size=None,
+            # Inference can take longer than the default websocket keepalive timeouts and may
+            # block the event loop if run inline. We disable keepalive pings here and instead
+            # rely on the client to reconnect on failure.
+            ping_interval=None,
+            ping_timeout=None,
             process_request=_health_check,
         ) as server:
             await server.serve_forever()
@@ -58,7 +63,9 @@ class WebsocketPolicyServer:
                 obs = msgpack_numpy.unpackb(await websocket.recv())
 
                 infer_time = time.monotonic()
-                action = self._policy.infer(obs)
+                # Run inference off the asyncio event loop so the server can continue to
+                # service websocket control frames (and generally remain responsive).
+                action = await asyncio.to_thread(self._policy.infer, obs)
                 infer_time = time.monotonic() - infer_time
 
                 action["server_timing"] = {

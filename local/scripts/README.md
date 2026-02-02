@@ -88,6 +88,7 @@ export PATH="$HOME/.cargo/bin:$PATH"  # or ~/.local/bin depending on install loc
 **Commands:**
 ```bash
 # Compute normalization stats
+export LD_LIBRARY_PATH="$HOME/ffmpeg7/lib:$LD_LIBRARY_PATH"
 uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune
 
 # Run training

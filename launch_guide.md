@@ -104,8 +104,8 @@ docker run --rm -it \
   -e RS_BASE=137322074310 \
   -e RS_WRIST=137322075008 \
   -e PROMPT="bus the table" \
-  -e INFER_PERIOD=4.0 \
-  -e HORIZON_STEPS=40 \
+  -e INFER_PERIOD=2.0 \
+  -e HORIZON_STEPS=20 \
   -e MAX_STEP_DEG=2.0 \
   -e DT=0.05 \
   -e VEL=0.05 \

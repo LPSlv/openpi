@@ -576,9 +576,9 @@ def main() -> None:
     if ns:
         print(f"Policy server reports: norm_stats_dir={ns!r}", flush=True)
     if reset_pose is None:
-        # Default reset position: same as dataset gathering "0 position"
-        # (-90.0, -70.0, -120.0, -80.0, 90.0, 0.0) degrees in radians
-        reset_pose = [-1.5708, -1.2217, -2.0944, -1.3963, 1.5708, 0.0]
+        # Default reset position: same as dataset gathering start position
+        # (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0) degrees in radians
+        reset_pose = [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]
         print("OK (using default reset position)")
     else:
         print(f"OK (reset_pose from metadata)")

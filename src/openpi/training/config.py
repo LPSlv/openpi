@@ -367,7 +367,9 @@ class LeRobotUR5DataConfig(DataConfigFactory):
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        # Boilerplate for remapping keys from the LeRobot dataset. We assume no renaming needed here.
+        # Boilerplate for remapping keys from the LeRobot dataset.
+        # When prompt_from_task=True, LeRobot automatically converts "task" strings to task_index,
+        # and PromptFromLeRobotTask creates "prompt" from task_index, so we just pass "prompt" through.
         repack_transform = _transforms.Group(
             inputs=[
                 _transforms.RepackTransform(
@@ -377,7 +379,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
                         "joints": "joints",
                         "gripper": "gripper",
                         "actions": "actions",
-                        "prompt": "prompt",
+                        "prompt": "prompt",  # PromptFromLeRobotTask creates this from task_index
                     }
                 )
             ]
@@ -698,7 +700,7 @@ _CONFIGS = [
     ),
     TrainConfig(
         name="pi05_ur5",
-        model=pi0_config.Pi0Config(action_horizon=15, pi05=True),
+        model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
         data=SimpleDataConfig(
             assets=AssetsConfig(asset_id="ur5e"),
             data_transforms=lambda model: _transforms.Group(
@@ -709,7 +711,7 @@ _CONFIGS = [
                 prompt_from_task=True,
             ),
         ),
-        policy_metadata={"reset_pose": [-1.5708, -0.7854, -2.0944, -1.3089, 1.5708, 0.0]},
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     #
     # Fine-tuning UR5 configs.
@@ -722,6 +724,7 @@ _CONFIGS = [
             discrete_state_input=False,
             paligemma_variant="gemma_2b_lora",
             action_expert_variant="gemma_300m_lora",
+            max_token_len=180,
         ),
         data=LeRobotUR5DataConfig(
             repo_id="LPSlvlv/ur5_pickandplace_3",
@@ -734,7 +737,8 @@ _CONFIGS = [
             ),
             base_config=DataConfig(
                 # This flag determines whether we load the prompt (i.e. the task instruction) from the
-                # ``task`` field in the LeRobot dataset. The recommended setting is True.
+                # ``task`` field in the LeRobot dataset. When True, LeRobot automatically converts task strings
+                # to task_index, and PromptFromLeRobotTask creates "prompt" from task_index. The recommended setting is True.
                 prompt_from_task=True,
             ),
         ),
@@ -750,6 +754,8 @@ _CONFIGS = [
         ).get_freeze_filter(),
         # Turn off EMA for LoRA finetuning.
         ema_decay=None,
+        # Reset pose matches dataset recording start position: (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0) degrees
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     #
     # Fine-tuning Libero configs.

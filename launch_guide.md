@@ -104,14 +104,14 @@ docker run --rm -it \
   -e RS_BASE=137322074310 \
   -e RS_WRIST=137322075008 \
   -e PROMPT="pick up the blue block and place it in the cardboard box" \
-  -e INFER_PERIOD=2.0 \
-  -e HORIZON_STEPS=18 \
-  -e MAX_STEP_DEG=1.0 \
+  -e INFER_PERIOD=0.6 \
+  -e HORIZON_STEPS=6 \
+  -e MAX_STEP_DEG=3.0 \
   -e DT=0.05 \
-  -e VEL=0.03 \
-  -e ACC=0.05 \
-  -e LOOKAHEAD=0.20 \
-  -e GAIN=100 \
+  -e VEL=0.08 \
+  -e ACC=0.15 \
+  -e LOOKAHEAD=0.15 \
+  -e GAIN=200 \
   openpi_robot
 ```
 

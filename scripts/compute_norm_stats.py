@@ -108,9 +108,26 @@ def main(config_name: str, max_frames: int | None = None):
 
     norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}
 
-    output_path = config.assets_dirs / data_config.repo_id
+    # IMPORTANT: training/inference loads norm stats from `<assets_dir>/<asset_id>/norm_stats.json`
+    # (see DataConfigFactory.create_base_config and checkpoints.load_norm_stats).
+    #
+    # So we must write to `asset_id`, NOT `repo_id`.
+    if data_config.asset_id is None:
+        raise ValueError(
+            "Cannot write norm stats because data_config.asset_id is None. "
+            "Set `assets=AssetsConfig(asset_id=...)` in your training config."
+        )
+
+    output_path = config.assets_dirs / data_config.asset_id
     print(f"Writing stats to: {output_path}")
     normalize.save(output_path, norm_stats)
+
+    # Back-compat convenience: if repo_id differs from asset_id, also write a copy to repo_id.
+    # (Older docs/scripts sometimes referenced repo_id-based paths.)
+    if data_config.repo_id and data_config.repo_id != data_config.asset_id:
+        legacy_path = config.assets_dirs / data_config.repo_id
+        print(f"Also writing (legacy path) to: {legacy_path}")
+        normalize.save(legacy_path, norm_stats)
 
 
 if __name__ == "__main__":

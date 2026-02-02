@@ -83,7 +83,7 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
     ),
     EnvMode.UR5: Checkpoint(
         config="pi05_ur5_low_mem_finetune",
-        dir="checkpoints/pi05_ur5_low_mem_finetune/ur5_third/499",
+        dir="checkpoints/pi05_ur5_low_mem_finetune/ur5_third_2/499",
     ),
     EnvMode.LIBERO: Checkpoint(
         config="pi05_libero",

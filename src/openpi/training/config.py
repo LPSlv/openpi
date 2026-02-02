@@ -730,13 +730,14 @@ _CONFIGS = [
         ),
         data=LeRobotUR5DataConfig(
             repo_id="LPSlvlv/ur5_pickandplace_3",
-            # This config lets us reload the UR5 normalization stats from the base model checkpoint.
-            # Reloading normalization stats can help transfer pre-trained models to new environments.
-            # See the docs/norm_stats.md file for more details.
-            assets=AssetsConfig(
-                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
-                asset_id="ur5e",
-            ),
+            # Norm stats behavior:
+            # - By default, this config expects you to compute stats for your dataset and store them locally under:
+            #     assets/pi05_ur5_low_mem_finetune/ur5e/norm_stats.json
+            #   via: `uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune`
+            #
+            # - If you instead want to *reload* the pretrained UR5e stats, set:
+            #     assets=AssetsConfig(assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets", asset_id="ur5e")
+            assets=AssetsConfig(asset_id="ur5e"),
             base_config=DataConfig(
                 # This flag determines whether we load the prompt (i.e. the task instruction) from the
                 # ``task`` field in the LeRobot dataset. When True, LeRobot automatically converts task strings
@@ -759,7 +760,7 @@ _CONFIGS = [
         # Turn off EMA for LoRA finetuning.
         ema_decay=None,
         # Reset pose matches dataset recording start position: (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0) degrees
-        # policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     #
     # Fine-tuning Libero configs.

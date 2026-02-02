@@ -127,5 +127,57 @@ docker run --rm -it \
   This config was moving quickly downards, and hitting joint limits, activating protective stop. And the motion was repeating.
 
 
-  
+  UR5_third_2:
+
+      #
+    # Fine-tuning UR5 configs.
+    #
+    TrainConfig(
+        name="pi05_ur5_low_mem_finetune",
+        # Pi0.5 LoRA fine-tuning (low memory).
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            max_token_len=180,
+            action_dim=32,  # Must match pi05_base checkpoint (UR5Outputs transform slices to 7 dims)
+            action_horizon=15,  # Must match base pi05_ur5 config
+        ),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_3",
+            # This config lets us reload the UR5 normalization stats from the base model checkpoint.
+            # Reloading normalization stats can help transfer pre-trained models to new environments.
+            # See the docs/norm_stats.md file for more details.
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                # This flag determines whether we load the prompt (i.e. the task instruction) from the
+                # ``task`` field in the LeRobot dataset. When True, LeRobot automatically converts task strings
+                # to task_index, and PromptFromLeRobotTask creates "prompt" from task_index. The recommended setting is True.
+                prompt_from_task=True,
+            ),
+        ),
+        # Load the pi0.5 base model checkpoint.
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=500,
+        log_interval=10,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            action_dim=32,
+            action_horizon=15,
+        ).get_freeze_filter(),
+        # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+        # Reset pose matches dataset recording start position: (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0) degrees
+        # policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+
+
+    
 

@@ -50,7 +50,7 @@ echo 'export HF_TOKEN=your_token_here' >> ~/.bashrc
 ```bash
 uv run python local/scripts/convert_ur5_raw_to_lerobot.py \
   --raw_dir raw_episodes \
-  --repo_id LPSlvlv/ur5_busthetable_2 \
+  --repo_id LPSlvlv/ur5_pickandplace_3 \
   --fps 10
 
 # Skip pushing to hub:
@@ -74,6 +74,18 @@ docker exec -it scripts-docker-openpi_train-1 /bin/bash
 
 # Inside container, run:
 uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune
+
+# Notes:
+# - This writes `norm_stats.json` under: `assets/pi05_ur5_low_mem_finetune/ur5e/`
+# - The finetune config `pi05_ur5_low_mem_finetune` is set up to LOAD stats from that path (fresh stats on your data).
+# - If you want to instead reuse the pretrained UR5e stats, update the config to point `assets_dir` at:
+#     gs://openpi-assets/checkpoints/pi05_base/assets (asset_id="ur5e")
+#
+# Inference:
+# - If you trained after computing stats, the checkpoint will save the stats under `<checkpoint_dir>/assets/ur5e/`
+#   and inference will automatically use them.
+# - If you want to force a specific stats file at inference time (without retraining), pass:
+#     uv run scripts/serve_policy.py --norm_stats_dir=assets/pi05_ur5_low_mem_finetune/ur5e ...
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi05_ur5_low_mem_finetune --exp-name=my_experiment --overwrite
 ```
 
@@ -96,8 +108,8 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi05_ur5_low_mem_fine
 
 #To download the checkpoint from HPC
 rsync -avhP \
-  lenardspatriks@rocket.hpc.ut.ee:/gpfs/helios/home/lenardspatriks/openpi/checkpoints/pi05_ur5_low_mem_finetune/ur5_first/99/ \
-  ./openpi_ckpt_99/
+  lenardspatriks@rocket.hpc.ut.ee:/gpfs/helios/home/lenardspatriks/openpi/checkpoints/pi05_ur5_low_mem_finetune/ur5_third/499/ \
+  ./openpi_ckpt_3_99/
 
 
 # Run inference

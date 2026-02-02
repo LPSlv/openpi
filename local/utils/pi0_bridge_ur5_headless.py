@@ -567,6 +567,14 @@ def main() -> None:
     print("Fetching policy configuration...", end=" ", flush=True)
     metadata = client.get_server_metadata()
     reset_pose = metadata.get("reset_pose")
+    # Print which checkpoint/config the server claims it is serving (added by scripts/serve_policy.py).
+    cfg = metadata.get("train_config")
+    ckpt = metadata.get("checkpoint_dir")
+    ns = metadata.get("norm_stats_dir")
+    if cfg or ckpt:
+        print(f"\nPolicy server reports: train_config={cfg!r} checkpoint_dir={ckpt!r}", flush=True)
+    if ns:
+        print(f"Policy server reports: norm_stats_dir={ns!r}", flush=True)
     if reset_pose is None:
         # Default reset position: same as dataset gathering "0 position"
         # (-90.0, -70.0, -120.0, -80.0, 90.0, 0.0) degrees in radians

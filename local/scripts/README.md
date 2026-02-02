@@ -34,8 +34,9 @@ python local/scripts/ur5_replay_and_record_raw.py \
 **Hugging Face Authentication:**
 
 Get token from https://huggingface.co/settings/tokens
+**Environment Variable**
 
-**Option 1: Environment Variable**
+
 ```bash
 export HF_TOKEN=your_token_here
 ```
@@ -45,17 +46,11 @@ Or add to `~/.bashrc`:
 echo 'export HF_TOKEN=your_token_here' >> ~/.bashrc
 ```
 
-**Option 2: CLI**
-```bash
-pip install huggingface-hub[cli]
-huggingface-cli login
-```
-
 **Convert:**
 ```bash
-uv run python openpi/local/scripts/convert_ur5_raw_to_lerobot.py \
+uv run python local/scripts/convert_ur5_raw_to_lerobot.py \
   --raw_dir raw_episodes \
-  --repo_id your_hf_username/ur5_freedrive \
+  --repo_id LPSlvlv/ur5_busthetable_2 \
   --fps 10
 
 # Skip pushing to hub:

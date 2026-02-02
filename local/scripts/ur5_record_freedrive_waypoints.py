@@ -534,7 +534,7 @@ class Args:
     ur_ip: str = os.environ.get("UR_IP", "192.10.0.11")
     out_dir: Path = Path(os.environ.get("OUT_DIR", "raw_episodes"))
     episode_id: str = ""
-    prompt: str = os.environ.get("PROMPT", "bus the table")
+    prompt: str = os.environ.get("PROMPT", "pick up the blue block and place it in the cardboard box")
 
     # RTDE sampling
     rtde_frequency_hz: float = 125.0
@@ -561,7 +561,7 @@ class Args:
     
     # Starting position (in degrees, will be converted to radians)
     move_to_start: bool = True
-    start_position_deg: tuple[float, float, float, float, float, float] = (-90.0, -70.0, -120.0, -80.0, 90.0, 0.0)
+    start_position_deg: tuple[float, float, float, float, float, float] = (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0)
     start_move_vel: float = 0.2  # rad/s
     start_move_acc: float = 0.3  # rad/s^2
 

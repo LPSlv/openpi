@@ -692,15 +692,15 @@ class Args:
     episode_id: str = ""
 
     # Replay motion params (URScript moveJ)
-    movej_vel: float = 0.2  # rad/s (reduced for slower, safer replay)
-    movej_acc: float = 0.3  # rad/s^2 (reduced for slower, safer replay)
+    movej_vel: float = 0.1  # rad/s (reduced for slower, safer replay)
+    movej_acc: float = 0.15  # rad/s^2 (reduced for slower, safer replay)
     blend_radius: float = 0.01  # meters in TCP space for moveL, but also accepted for moveJ blending on UR
     
     # Starting position (in degrees, will be converted to radians)
     move_to_start: bool = True
-    start_position_deg: tuple[float, float, float, float, float, float] = (-90.0, -70.0, -120.0, -80.0, 90.0, 0.0)
-    start_move_vel: float = 0.2  # rad/s
-    start_move_acc: float = 0.3  # rad/s^2
+    start_position_deg: tuple[float, float, float, float, float, float] = (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0)
+    start_move_vel: float = 0.1  # rad/s
+    start_move_acc: float = 0.15  # rad/s^2
 
     # RTDE streaming
     rtde_frequency_hz: float = 125.0

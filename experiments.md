@@ -67,8 +67,10 @@ docker run --rm -it \
   openpi_robot
 
 
-  This was using 1st dataset created (test): LPSlvlv/ur5_busthetable_1. Consisted of just one episode of picking a plastic tray and mug from a table and putting in a bin. Fine tuning took around 25 minutes on HPC using h200-141gb. Interestingly on HPC with tesla it was expected to take 10 hours. Which could be maybe of the tesla gpu not having tensor core native support for bfloat16 data types.
+  This was using 1st dataset created (test): LPSlvlv/ur5_busthetable_1. Consisted of just one episode of picking a plastic tray and mug from a table and putting in a bin. Fine tuning took around 25 minutes on HPC using h200-141gb. Interestingly on HPC with tesla it was expected to take 10 hours. Which could be maybe of the tesla gpu not having tensor core native support for bfloat16 data types. 1000 training steps were used, but noticed that with 500 the loss already stabilizes.
 
   2nd dataset created: LPSlvlv/ur5_busthetable_2. Consisted of 10 episodes of picking dishes from a table and putting in a bin. Different objects were used like red, yellow, white mug. Fork and a spoon, plastic tray and a white bowl. Different variations were created, but most consisted of 3 objects on the table and around 30 waypoints recorded. Fork and spoon was placed on a table, inside the mug and bowl. Cup was also placed in a bowl but picked up seperately. Bin location was changed, but mostly stayed in the right. 
+
+  Experiments with this, didnt show better results. The model sometimes moved towards the object, but couldnt reach it. If it was placed in the grippers, the robot gripped it, but sometimes dropped after a few seconds, sometimes started to move to drop of location, but at the end not reaching it fully. This could be because the environment was too varied for the dataset size, instead acting not like 10 episodes but like 10x1 single episodes.
 
   

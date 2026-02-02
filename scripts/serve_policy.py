@@ -7,6 +7,7 @@ import tyro
 
 from openpi.policies import policy as _policy
 from openpi.policies import policy_config as _policy_config
+from openpi.shared import normalize as _normalize
 from openpi.serving import websocket_policy_server
 from openpi.training import config as _config
 
@@ -52,7 +53,17 @@ class Args:
     # Record the policy's behavior for debugging.
     record: bool = False
 
+    # Optional override: load normalization stats from a specific directory containing `norm_stats.json`.
+    # If set, this replaces the norm stats that would otherwise be loaded from the checkpoint directory.
+    #
+    # Example (UR5 bus-the-table stats in this repo):
+    #   --norm_stats_dir=assets/pi05_ur5_low_mem_finetune/ims/ur5_bus_the_table
+    norm_stats_dir: str | None = None
+
     # Specifies how to load the policy. If not provided, the default policy for the environment will be used.
+    #
+    # Note: In tyro, union subcommands (like policy:checkpoint) effectively terminate parsing for subsequent
+    # fields, so keep any global flags (like norm_stats_dir) *above* this field.
     policy: Checkpoint | Default = dataclasses.field(default_factory=Default)
 
 
@@ -72,7 +83,7 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
     ),
     EnvMode.UR5: Checkpoint(
         config="pi05_ur5_low_mem_finetune",
-        dir="checkpoints/pi05_ur5_low_mem_finetune/ur5_first/999",
+        dir="checkpoints/pi05_ur5_low_mem_finetune/ur5_second/499",
     ),
     EnvMode.LIBERO: Checkpoint(
         config="pi05_libero",
@@ -92,18 +103,45 @@ def create_default_policy(env: EnvMode, *, default_prompt: str | None = None) ->
 
 def create_policy(args: Args) -> _policy.Policy:
     """Create a policy from the given arguments."""
+    norm_stats = _normalize.load(args.norm_stats_dir) if args.norm_stats_dir else None
     match args.policy:
         case Checkpoint():
             return _policy_config.create_trained_policy(
-                _config.get_config(args.policy.config), args.policy.dir, default_prompt=args.default_prompt
+                _config.get_config(args.policy.config),
+                args.policy.dir,
+                default_prompt=args.default_prompt,
+                norm_stats=norm_stats,
             )
         case Default():
-            return create_default_policy(args.env, default_prompt=args.default_prompt)
+            checkpoint = DEFAULT_CHECKPOINT[args.env]
+            return _policy_config.create_trained_policy(
+                _config.get_config(checkpoint.config),
+                checkpoint.dir,
+                default_prompt=args.default_prompt,
+                norm_stats=norm_stats,
+            )
 
 
 def main(args: Args) -> None:
     policy = create_policy(args)
-    policy_metadata = policy.metadata
+
+    # Resolve which checkpoint/config we actually loaded so we can surface it in metadata/logs.
+    # This helps avoid the common footgun of thinking you're serving "the new checkpoint" while
+    # actually still running the default one from SERVER_ARGS / --env.
+    if isinstance(args.policy, Checkpoint):
+        resolved_ckpt = args.policy
+    else:
+        resolved_ckpt = DEFAULT_CHECKPOINT[args.env]
+
+    policy_metadata = dict(policy.metadata)
+    policy_metadata["train_config"] = resolved_ckpt.config
+    policy_metadata["checkpoint_dir"] = resolved_ckpt.dir
+    if args.norm_stats_dir:
+        policy_metadata["norm_stats_dir"] = args.norm_stats_dir
+
+    logging.info("Serving policy: config=%s checkpoint_dir=%s", resolved_ckpt.config, resolved_ckpt.dir)
+    if args.norm_stats_dir:
+        logging.info("Using norm stats override from: %s", args.norm_stats_dir)
 
     # Record the policy's behavior.
     if args.record:

@@ -73,4 +73,59 @@ docker run --rm -it \
 
   Experiments with this, didnt show better results. The model sometimes moved towards the object, but couldnt reach it. If it was placed in the grippers, the robot gripped it, but sometimes dropped after a few seconds, sometimes started to move to drop of location, but at the end not reaching it fully. This could be because the environment was too varied for the dataset size, instead acting not like 10 episodes but like 10x1 single episodes.
 
+  UR5_third dataset: A simpler 10 episode was  created using 10 episodes of picking up a blue triangular object and placing in a cardboard box. The object location was varied a little bit, but not as much as before.
+
+  Config:
+
+     #
+    # Fine-tuning UR5 configs.
+    #
+    TrainConfig(
+        name="pi05_ur5_low_mem_finetune",
+        # Pi0.5 LoRA fine-tuning (low memory).
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            max_token_len=180,
+        ),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_3",
+            # This config lets us reload the UR5 normalization stats from the base model checkpoint.
+            # Reloading normalization stats can help transfer pre-trained models to new environments.
+            # See the docs/norm_stats.md file for more details.
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                # This flag determines whether we load the prompt (i.e. the task instruction) from the
+                # ``task`` field in the LeRobot dataset. When True, LeRobot automatically converts task strings
+                # to task_index, and PromptFromLeRobotTask creates "prompt" from task_index. The recommended setting is True.
+                prompt_from_task=True,
+            ),
+        ),
+        # Load the pi0.5 base model checkpoint.
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=500,
+        log_interval=10,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+        # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+        # Reset pose matches dataset recording start position: (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0) degrees
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+
+  After should try versions without Lora, but with full fine tuning. And should try calculating norm statistics, not reloading.
+
+  This config was moving quickly downards, and hitting joint limits, activating protective stop. And the motion was repeating.
+
+
   
+

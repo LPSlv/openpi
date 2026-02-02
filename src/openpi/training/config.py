@@ -725,7 +725,7 @@ _CONFIGS = [
             paligemma_variant="gemma_2b_lora",
             action_expert_variant="gemma_300m_lora",
             max_token_len=180,
-            action_dim=7,  # UR5: 6 joints + 1 gripper
+            action_dim=32,  # Must match pi05_base checkpoint (UR5Outputs transform slices to 7 dims)
             action_horizon=15,  # Must match base pi05_ur5 config
         ),
         data=LeRobotUR5DataConfig(
@@ -753,7 +753,7 @@ _CONFIGS = [
             discrete_state_input=False,
             paligemma_variant="gemma_2b_lora",
             action_expert_variant="gemma_300m_lora",
-            action_dim=7,
+            action_dim=32,
             action_horizon=15,
         ).get_freeze_filter(),
         # Turn off EMA for LoRA finetuning.

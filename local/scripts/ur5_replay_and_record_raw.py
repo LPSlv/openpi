@@ -745,7 +745,15 @@ def main(args: Args) -> None:
     base_dir, wrist_dir = _ensure_dirs(ep_dir)
 
     waypoints_obj = json.loads(args.waypoints_path.read_text())
-    prompt = args.prompt or waypoints_obj.get("prompt", "do something")
+    # Prioritize prompt from waypoints.json (if present), then use explicit --prompt/PROMPT env var, then fallback
+    # This ensures the original waypoint prompt is preserved unless explicitly overridden
+    waypoint_prompt = waypoints_obj.get("prompt")
+    if waypoint_prompt:
+        prompt = waypoint_prompt
+    elif args.prompt:
+        prompt = args.prompt
+    else:
+        prompt = "do something"
     waypoints = waypoints_obj["waypoints"]
     waypoints_q: list[list[float]] = [list(map(float, w["q"])) for w in waypoints]
     q_goal = np.asarray(waypoints_q[-1], dtype=np.float64)

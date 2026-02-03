@@ -57,22 +57,24 @@ class UR5Inputs(transforms.DataTransformFn):
                 "(observation/state, observation/image, observation/wrist_image) keys"
             )
 
-        # Create inputs dict.
+        # Model image-key conventions differ slightly between PI0/PI05 vs PI0_FAST.
+        match self.model_type:
+            case _model.ModelType.PI0 | _model.ModelType.PI05:
+                names = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
+                images = (base_image, wrist_image, np.zeros_like(base_image))
+                image_masks = (np.True_, np.True_, np.False_)
+            case _model.ModelType.PI0_FAST:
+                # PI0_FAST expects (base_0_rgb, base_1_rgb, wrist_0_rgb) and we do not mask padding images.
+                names = ("base_0_rgb", "base_1_rgb", "wrist_0_rgb")
+                images = (base_image, np.zeros_like(base_image), wrist_image)
+                image_masks = (np.True_, np.True_, np.True_)
+            case _:
+                raise ValueError(f"Unsupported model type: {self.model_type}")
+
         inputs = {
             "state": state,
-            "image": {
-                "base_0_rgb": base_image,
-                "left_wrist_0_rgb": wrist_image,
-                # Since there is no right wrist, replace with zeros
-                "right_wrist_0_rgb": np.zeros_like(base_image),
-            },
-            "image_mask": {
-                "base_0_rgb": np.True_,
-                "left_wrist_0_rgb": np.True_,
-                # Since the "slot" for the right wrist is not used, this mask is set
-                # to False
-                "right_wrist_0_rgb": np.True_ if self.model_type == _model.ModelType.PI0_FAST else np.False_,
-            },
+            "image": dict(zip(names, images, strict=True)),
+            "image_mask": dict(zip(names, image_masks, strict=True)),
         }
 
         if "actions" in data:

@@ -9,7 +9,7 @@ This script:
 Output is a simple, raw-on-disk format that can be replayed and converted later.
 
 Example:
-  uv run python openpi/local/scripts/ur5_record_freedrive_waypoints.py \
+  uv run python local/scripts/ur5_record_freedrive_waypoints.py \
     --ur_ip 192.10.0.11 \
     --prompt "pick up the block" \
     --out_dir raw_episodes

@@ -104,8 +104,8 @@ docker run --rm -it \
   -e RS_BASE=137322074310 \
   -e RS_WRIST=137322075008 \
   -e PROMPT="pick up the blue block and place it in the cardboard box" \
-  -e INFER_PERIOD=0.6 \
-  -e HORIZON_STEPS=6 \
+  -e INFER_PERIOD=0.8 \
+  -e HORIZON_STEPS=16 \
   -e MAX_STEP_DEG=3.0 \
   -e DT=0.05 \
   -e VEL=0.08 \

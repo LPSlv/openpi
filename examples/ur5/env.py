@@ -2,7 +2,7 @@
 
 from typing import List, Optional  # noqa: UP035
 
-import einops
+import numpy as np
 from openpi_client import image_tools
 from openpi_client.runtime import environment as _environment
 from typing_extensions import override
@@ -60,20 +60,29 @@ class UR5RealEnvironment(_environment.Environment):
 
         obs = self._ts["observation"].copy()
 
-        # Process images
-        processed_images = {}
-        for cam_name in obs["images"]:
-            img = obs["images"][cam_name]
-            # Ensure image is in correct format
-            img = image_tools.convert_to_uint8(
-                image_tools.resize_with_pad(img, self._render_height, self._render_width)
-            )
-            # Rearrange from HWC to CHW format
-            processed_images[cam_name] = einops.rearrange(img, "h w c -> c h w")
+        # Policy server expects the same key conventions used across environments:
+        # - "observation/state": float32 (7,) = joints(6) + gripper(1)
+        # - "observation/image": uint8 (H,W,3) base camera
+        # - "observation/wrist_image": uint8 (H,W,3) wrist camera
+        #
+        # Note: Model-side UR5 transforms (`openpi.policies.ur5_policy.UR5Inputs`) handle HWC uint8.
+        state = np.asarray(obs["qpos"], dtype=np.float32).reshape(-1)
+
+        # Process images into uint8 HWC at the model resolution.
+        base_img = obs["images"].get("base")
+        wrist_img = obs["images"].get("wrist")
+
+        def _proc(img):
+            img = image_tools.resize_with_pad(img, self._render_height, self._render_width)
+            return image_tools.convert_to_uint8(img)
+
+        base_img = _proc(base_img) if base_img is not None else np.zeros((self._render_height, self._render_width, 3), dtype=np.uint8)
+        wrist_img = _proc(wrist_img) if wrist_img is not None else base_img.copy()
 
         return {
-            "state": obs["qpos"],
-            "images": processed_images,
+            "observation/state": state,
+            "observation/image": base_img,
+            "observation/wrist_image": wrist_img,
         }
 
     @override

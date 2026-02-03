@@ -54,7 +54,7 @@ uv run python local/scripts/convert_ur5_raw_to_lerobot.py \
   --fps 10
 
 # Skip pushing to hub:
-uv run python openpi/local/scripts/convert_ur5_raw_to_lerobot.py \
+uv run python local/scripts/convert_ur5_raw_to_lerobot.py \
   --raw_dir raw_episodes \
   --repo_id your_hf_username/ur5_freedrive \
   --fps 10 \
@@ -78,8 +78,10 @@ uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune
 # Notes:
 # - This writes `norm_stats.json` under: `assets/pi05_ur5_low_mem_finetune/ur5e/`
 # - The finetune config `pi05_ur5_low_mem_finetune` is set up to LOAD stats from that path (fresh stats on your data).
-# - If you want to instead reuse the pretrained UR5e stats, update the config to point `assets_dir` at:
-#     gs://openpi-assets/checkpoints/pi05_base/assets (asset_id="ur5e")
+# - If you want to instead reuse the pretrained UR5e stats:
+#   - use the config `pi05_ur5_low_mem_finetune_reload_stats`, OR
+#   - update the config to point `assets_dir` at:
+#       gs://openpi-assets/checkpoints/pi05_base/assets (asset_id="ur5e")
 #
 # Inference:
 # - If you trained after computing stats, the checkpoint will save the stats under `<checkpoint_dir>/assets/ur5e/`

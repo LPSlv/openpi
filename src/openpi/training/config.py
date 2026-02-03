@@ -361,7 +361,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
     """Data pipeline config for training on LeRobot-formatted UR5 datasets."""
 
     # If true, interpret dataset actions as absolute (joint targets) and convert to deltas.
-    # If your dataset already stores delta actions (as in openpi/local/scripts/ur5_replay_and_record_raw.py),
+    # If your dataset already stores delta actions (as in local/scripts/ur5_replay_and_record_raw.py),
     # leave this as False.
     use_delta_action_transform: bool = False
 
@@ -716,6 +716,26 @@ _CONFIGS = [
     #
     # Fine-tuning UR5 configs.
     #
+    # Guide-aligned example (see `examples/ur5/README.md`):
+    # Fine-tune pi0 on your UR5 LeRobot dataset, reusing the pretrained UR5e norm stats from the pi0 base checkpoint.
+    TrainConfig(
+        name="pi0_ur5",
+        model=pi0_config.Pi0Config(),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_3",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                # Recommended: load prompt from the LeRobot `task` field.
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=1_000,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
     TrainConfig(
         name="pi05_ur5_low_mem_finetune",
         # Pi0.5 LoRA fine-tuning (low memory).
@@ -735,8 +755,13 @@ _CONFIGS = [
             #     assets/pi05_ur5_low_mem_finetune/ur5e/norm_stats.json
             #   via: `uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune`
             #
-            # - If you instead want to *reload* the pretrained UR5e stats, set:
-            #     assets=AssetsConfig(assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets", asset_id="ur5e")
+            # - If you instead want to *reload* the pretrained UR5e stats, either:
+            #   (A) switch to the `pi05_ur5_low_mem_finetune_reload_stats` config below, or
+            #   (B) set:
+            #         assets=AssetsConfig(assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets", asset_id="ur5e")
+            #
+            # See `docs/norm_stats.md` for guidance on when reloading helps, and the action/state space conventions
+            # that must match for stats reuse to be valid.
             assets=AssetsConfig(asset_id="ur5e"),
             base_config=DataConfig(
                 # This flag determines whether we load the prompt (i.e. the task instruction) from the
@@ -760,6 +785,44 @@ _CONFIGS = [
         # Turn off EMA for LoRA finetuning.
         ema_decay=None,
         # Reset pose matches dataset recording start position: (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0) degrees
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+    TrainConfig(
+        name="pi05_ur5_low_mem_finetune_reload_stats",
+        # Same as `pi05_ur5_low_mem_finetune`, but reuses the pretrained UR5e normalization stats from pi0.5 base.
+        #
+        # This follows the recommendation in `docs/norm_stats.md`: if your target robot matches a provided
+        # pretraining stats set (UR5e -> `asset_id="ur5e"`), try reloading those stats during fine-tuning.
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            max_token_len=180,
+            action_dim=32,
+            action_horizon=15,
+        ),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_3",
+            # Key difference vs `pi05_ur5_low_mem_finetune`: load stats from the base checkpoint assets dir.
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=500,
+        log_interval=10,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            action_dim=32,
+            action_horizon=15,
+        ).get_freeze_filter(),
+        ema_decay=None,
         policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     #

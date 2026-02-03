@@ -82,8 +82,9 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
         dir="gs://openpi-assets/checkpoints/pi05_droid",
     ),
     EnvMode.UR5: Checkpoint(
-        config="pi05_ur5_low_mem_finetune",
-        dir="checkpoints/pi05_ur5_low_mem_finetune/ur5_third_2/499",
+        # Default to the base pi0.5 checkpoint. Override with `policy:checkpoint` for your fine-tuned model.
+        config="pi05_ur5",
+        dir="gs://openpi-assets/checkpoints/pi05_base",
     ),
     EnvMode.LIBERO: Checkpoint(
         config="pi05_libero",
@@ -136,6 +137,11 @@ def main(args: Args) -> None:
     policy_metadata = dict(policy.metadata)
     policy_metadata["train_config"] = resolved_ckpt.config
     policy_metadata["checkpoint_dir"] = resolved_ckpt.dir
+    # Surface model details so clients can auto-configure (e.g., action chunk length).
+    resolved_cfg = _config.get_config(resolved_ckpt.config)
+    policy_metadata["model_type"] = resolved_cfg.model.model_type.value
+    policy_metadata["action_horizon"] = resolved_cfg.model.action_horizon
+    policy_metadata["action_dim"] = resolved_cfg.model.action_dim
     if args.norm_stats_dir:
         policy_metadata["norm_stats_dir"] = args.norm_stats_dir
 

@@ -18,7 +18,8 @@ class Args:
     host: str = "0.0.0.0"
     port: int = 8000
 
-    action_horizon: int = 25
+    # If None, will auto-use the action horizon reported by the policy server metadata (recommended).
+    action_horizon: int | None = None
 
     num_episodes: int = 1
     max_episode_steps: int = 1000
@@ -39,6 +40,7 @@ def main(args: Args) -> None:
     logging.info(f"Server metadata: {ws_client_policy.get_server_metadata()}")
 
     metadata = ws_client_policy.get_server_metadata()
+    action_horizon = int(metadata.get("action_horizon", 15)) if args.action_horizon is None else int(args.action_horizon)
     runtime = _runtime.Runtime(
         environment=_env.UR5RealEnvironment(
             ur_ip=args.ur_ip,
@@ -51,7 +53,7 @@ def main(args: Args) -> None:
         agent=_policy_agent.PolicyAgent(
             policy=action_chunk_broker.ActionChunkBroker(
                 policy=ws_client_policy,
-                action_horizon=args.action_horizon,
+                action_horizon=action_horizon,
             )
         ),
         subscribers=[],

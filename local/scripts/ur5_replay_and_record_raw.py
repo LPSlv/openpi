@@ -17,7 +17,7 @@ Raw episode format (one folder per episode):
     images/wrist/000000.jpg
 
 Example:
-  uv run python openpi/local/scripts/ur5_replay_and_record_raw.py \
+  uv run python local/scripts/ur5_replay_and_record_raw.py \
     --ur_ip 192.10.0.11 \
     --waypoints_path raw_episodes/ur5_freedrive_.../waypoints.json \
     --rs_base_serial <SERIAL> --rs_wrist_serial <SERIAL> \

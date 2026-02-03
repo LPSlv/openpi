@@ -13,7 +13,7 @@ This repo includes simple, standalone scripts to:
 Run:
 
 ```bash
-uv run python openpi/local/scripts/ur5_record_freedrive_waypoints.py \
+uv run python local/scripts/ur5_record_freedrive_waypoints.py \
   --ur_ip 192.168.1.116 \
   --prompt "do something" \
   --out_dir raw_episodes
@@ -28,13 +28,13 @@ This will create:
 You need two RealSense serials (external + wrist). You can list them with:
 
 ```bash
-uv run python openpi/local/test/rs_list.py
+uv run python local/test/rs_list.py
 ```
 
 Then run:
 
 ```bash
-uv run python openpi/local/scripts/ur5_replay_and_record_raw.py \
+uv run python local/scripts/ur5_replay_and_record_raw.py \
   --ur_ip 192.168.1.116 \
   --waypoints_path raw_episodes/<episode_id>/waypoints.json \
   --rs_base_serial <RS_SERIAL_BASE> \
@@ -62,7 +62,7 @@ Each line in `steps.jsonl` includes:
 - `actions` (float32, shape `(7,)`): `delta_q(6) + absolute gripper_cmd(1)`
 - `task`: the language instruction / prompt
 
-First, we will define the `UR5Inputs` and `UR5Outputs` classes, which map the UR5 environment to the model and vice versa. Check the corresponding files in `src/openpi/policies/libero_policy.py` for comments explaining each line.
+First, we will define the `UR5Inputs` and `UR5Outputs` classes, which map the UR5 environment to the model and vice versa. Check the corresponding file `src/openpi/policies/ur5_policy.py` for comments explaining each line.
 
 ```python
 
@@ -80,22 +80,24 @@ class UR5Inputs(transforms.DataTransformFn):
         base_image = _parse_image(data["base_rgb"])
         wrist_image = _parse_image(data["wrist_rgb"])
 
-        # Create inputs dict.
+        # Model image-key conventions differ slightly between PI0/PI05 vs PI0_FAST.
+        match self.model_type:
+            case _model.ModelType.PI0 | _model.ModelType.PI05:
+                names = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
+                images = (base_image, wrist_image, np.zeros_like(base_image))
+                image_masks = (np.True_, np.True_, np.False_)
+            case _model.ModelType.PI0_FAST:
+                # PI0_FAST expects (base_0_rgb, base_1_rgb, wrist_0_rgb) and we do not mask padding images.
+                names = ("base_0_rgb", "base_1_rgb", "wrist_0_rgb")
+                images = (base_image, np.zeros_like(base_image), wrist_image)
+                image_masks = (np.True_, np.True_, np.True_)
+            case _:
+                raise ValueError(f"Unsupported model type: {self.model_type}")
+
         inputs = {
             "state": state,
-            "image": {
-                "base_0_rgb": base_image,
-                "left_wrist_0_rgb": wrist_image,
-                # Since there is no right wrist, replace with zeros
-                "right_wrist_0_rgb": np.zeros_like(base_image),
-            },
-            "image_mask": {
-                "base_0_rgb": np.True_,
-                "left_wrist_0_rgb": np.True_,
-                # Since the "slot" for the right wrist is not used, this mask is set
-                # to False
-                "right_wrist_0_rgb": np.True_ if self.model_type == _model.ModelType.PI0_FAST else np.False_,
-            },
+            "image": dict(zip(names, images, strict=True)),
+            "image_mask": dict(zip(names, image_masks, strict=True)),
         }
 
         if "actions" in data:
@@ -126,7 +128,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
     """Data pipeline config for training on LeRobot-formatted UR5 datasets."""
 
     # If true, interpret dataset actions as absolute (joint targets) and convert to deltas.
-    # If your dataset already stores delta actions (as in openpi/local/scripts/ur5_replay_and_record_raw.py),
+    # If your dataset already stores delta actions (as in local/scripts/ur5_replay_and_record_raw.py),
     # leave this as False.
     use_delta_action_transform: bool = False
 
@@ -156,7 +158,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
 
         # Optionally convert absolute actions to delta actions.
         # By convention, we do not convert the gripper action (7th dimension).
-        # Note: The raw recording script (ur5_replay_and_record_raw.py) already records delta actions,
+        # Note: The raw recording script (local/scripts/ur5_replay_and_record_raw.py) already records delta actions,
         # so use_delta_action_transform should be False for datasets created with that script.
         if self.use_delta_action_transform:
             delta_action_mask = _transforms.make_bool_mask(6, -1)

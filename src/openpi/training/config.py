@@ -748,7 +748,8 @@ _CONFIGS = [
         data=LeRobotUR5DataConfig(
             repo_id="LPSlvlv/ur5_pickandplace_3",
             assets=AssetsConfig(
-                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
+                # Use pi05_base assets to get quantile normalization stats required for pi05 models.
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
                 asset_id="ur5e",
             ),
             base_config=DataConfig(

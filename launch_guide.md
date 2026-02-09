@@ -113,6 +113,35 @@ docker run --rm -it \
   -e LOOKAHEAD=0.15 \
   -e GAIN=200 \
   openpi_robot
+
+
+  docker run --rm -it \
+  --gpus=all \
+  --network=host \
+  --ipc=host \
+  --device=/dev/bus/usb:/dev/bus/usb \
+  $RUN_DEVICES \
+  --group-add video \
+  -v "$PWD":/app \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
+  -e QT_QPA_PLATFORM=xcb \
+  -e QT_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins \
+  -e QT_QPA_PLATFORM_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins/platforms \
+  --name openpi-robot \
+  -e RS_BASE=137322074310 \
+  -e RS_WRIST=137322075008 \
+  -e PROMPT="pick up the blue block and place it in the cardboard box" \
+  -e INFER_PERIOD=0.4 \
+  -e HORIZON_STEPS=8 \
+  -e MAX_STEP_DEG=3.0 \
+  -e DT=0.05 \
+  -e VEL=0.08 \
+  -e ACC=0.15 \
+  -e LOOKAHEAD=0.15 \
+  -e GAIN=200 \
+  openpi_robot
 ```
 
 **Tuning notes (UR5 smoothness + “short” motions):**

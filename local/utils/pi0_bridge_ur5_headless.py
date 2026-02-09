@@ -58,7 +58,8 @@ if _infer_period_raw not in (None, ""):
     except ValueError as e:
         raise ValueError(f"Invalid INFER_PERIOD={_infer_period_raw!r}, expected float seconds") from e
 
-HOLD_PER_STEP = float(os.environ.get("HOLD_PER_STEP", "0.15"))
+# Pi0 pretrained model expects 20 Hz for UR5e → 0.05s per action step.
+HOLD_PER_STEP = float(os.environ.get("HOLD_PER_STEP", "0.05"))
 HORIZON_STEPS = int(os.environ.get("HORIZON_STEPS", "10"))
 
 if INFER_PERIOD is not None and "HOLD_PER_STEP" not in os.environ:
@@ -163,6 +164,16 @@ def _start_rgb(serial: str) -> "rs.pipeline | None":
 
 def _read_rgb(pipe: "rs.pipeline") -> np.ndarray | None:
     frames = pipe.wait_for_frames(RS_TIMEOUT_MS)
+    # Drain buffered frames so we always use the freshest image.
+    # The RealSense streams at RS_FPS (default 60 Hz), but the control loop
+    # only reads once per inference cycle (~1-2s). Without draining, the
+    # robot acts on frames that are seconds old.
+    try:
+        while True:
+            newer = pipe.poll_for_frames()
+            frames = newer
+    except RuntimeError:
+        pass  # No more buffered frames available
     frame = frames.get_color_frame()
     if not frame:
         return None
@@ -469,12 +480,28 @@ class RobotiqGripperHelper:
 
     def move_normalized(self, position_01: float) -> None:
         """Move gripper to normalized position (0.0 = open, 1.0 = closed).
-        
+
         Args:
             position_01: Gripper position normalized to [0.0, 1.0]
         """
         position = int(np.clip(position_01 * 255, 0, 255))
         self.move(position)
+
+    def send_normalized(self, position_01: float, speed: int = 255, force: int = 128) -> None:
+        """Send gripper target without blocking (fire-and-forget).
+
+        Unlike move_normalized, this returns immediately so the arm can
+        keep moving while the gripper travels. Use during the control loop.
+        """
+        position = int(np.clip(position_01 * 255, 0, 255))
+        speed = int(np.clip(speed, 0, 255))
+        force = int(np.clip(force, 0, 255))
+        self._gripper._set_vars(OrderedDict([
+            (self._gripper.POS, position),
+            (self._gripper.SPE, speed),
+            (self._gripper.FOR, force),
+            (self._gripper.GTO, 1),
+        ]))
 
     def get_position(self) -> int:
         """Get current gripper position (0-255, where 0 is fully open, 255 is fully closed).
@@ -680,7 +707,17 @@ def main() -> None:
                         rgb_wrist = rgb_base
 
             q = np.asarray(rcv.getActualQ(), dtype=np.float32)
-            state = np.concatenate([q, np.array([0.0], dtype=np.float32)], axis=0)
+            # Read actual gripper position so the model gets correct proprioceptive feedback.
+            # Without this, state[6] is always 0.0 and the model learns action[6] ≈ state[6],
+            # meaning it never commands the gripper to close.
+            if gripper is not None:
+                try:
+                    gripper_pos = gripper.get_position_normalized()
+                except Exception:
+                    gripper_pos = last_gripper if last_gripper is not None else 0.0
+            else:
+                gripper_pos = last_gripper if last_gripper is not None else 0.0
+            state = np.concatenate([q, np.array([gripper_pos], dtype=np.float32)], axis=0)
 
             obs = {
                 "observation/image": rgb_base,
@@ -758,7 +795,8 @@ def main() -> None:
                 if last_gripper is None or abs(g - last_gripper) > GRIPPER_DEBOUNCE:
                     if not DRY_RUN and gripper is not None:
                         try:
-                            gripper.move_normalized(g)
+                            # Non-blocking: send target and let gripper move while arm continues.
+                            gripper.send_normalized(g)
                         except Exception as e:
                             print(f"Warning: Gripper move failed: {e}", file=sys.stderr, flush=True)
                     last_gripper = g

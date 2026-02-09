@@ -722,7 +722,7 @@ _CONFIGS = [
         name="pi0_ur5",
         model=pi0_config.Pi0Config(),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_3",
+            repo_id="LPSlvlv/ur5_pickandplace_4",
             assets=AssetsConfig(
                 assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
                 asset_id="ur5e",
@@ -733,7 +733,7 @@ _CONFIGS = [
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
-        num_train_steps=400,
+        num_train_steps=500,
         policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     TrainConfig(

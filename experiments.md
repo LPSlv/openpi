@@ -183,5 +183,120 @@ docker run --rm -it \
 - Update pi05_ur5_low_mem_finetune config to use local computed stats
 
 
+
+UR5_THIRD_3:
+
+Took config from example with ur5, and reloading the norm statistics, with 50 action horizon. first run with full training (not LORA). Also overfitting with 1000 train steps.
+
+    TrainConfig(
+        name="pi0_ur5",
+        model=pi0_config.Pi0Config(),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_3",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                # Recommended: load prompt from the LeRobot `task` field.
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=1_000,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+
+
+what is a good finetuning dataset amount? 
+https://github.com/Physical-Intelligence/openpi/issues/768 say 90minutes got acceptable results
+https://github.com/Physical-Intelligence/openpi/issues/850 had one hour
+
+This robot finally learned to move, moving quickly to the object, but failing to activate gripper on it. Possibly due to overfitting.
+
+
+UR5_THIRD_4:
+
+Previous config but changed train steps to 400 to stop overfitting,
+
+    TrainConfig(
+        name="pi0_ur5",
+        model=pi0_config.Pi0Config(),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_3",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                # Recommended: load prompt from the LeRobot `task` field.
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=400,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+
+UR5_THIRD_5:
+
+Using droid pi05 checkpoint:
+
+    TrainConfig(
+        name="pi05_ur5_droid",
+        # Fine-tune pi05_droid checkpoint on UR5 LeRobot dataset.
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_horizon=15,  # Must match pi05_droid checkpoint
+            action_dim=32,  # pi05 is trained with 32-dim actions
+            max_token_len=180,
+        ),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_3",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                # Recommended: load prompt from the LeRobot `task` field.
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_droid/params"),
+        num_train_steps=400,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+
     
+
+    These bugs were fixed:
+
+    Bug 1 — Gripper proprioception is dead (FIXED)
+In pi0_bridge_ur5_headless.py:683, the gripper state was hardcoded to 0.0. The model never sees the real gripper position.
+
+During training, the dataset has state[6] = g_cmd matching action[6] = g_cmd. The model learns the shortcut action[6] ≈ state[6]. During inference with state[6] always 0.0, the model outputs action[6] ≈ 0.0 — keeping the gripper open forever.
+
+Applied fix: Now reads the actual Robotiq position via gripper.get_position_normalized() and feeds it into state[6].
+
+
+Bug 3 — Blocking gripper I/O freezes the arm (FIXED)
+gripper.move_normalized() called move_and_wait() which polls the gripper for up to 12 seconds, halting all arm motion. Replaced with non-blocking send_normalized() that sets the target and returns immediately.
+
+
+
+But for future also this needs to be fixed, but this requires dataset fixing and reworking:
+
+Bug 2 — Action temporal misalignment at gripper transitions (dataset issue)
+In ur5_replay_and_record_raw.py:1002-1007, the recording stores action[6] = g_cmd which is the same value as state[6] at the same timestep. The model never sees a training example where observation=gripper_open but action=gripper_close. The "close now" signal only exists implicitly within the 50-step action chunk.
+
+Impact: The model learns to maintain the current gripper state rather than initiate transitions. This is partially mitigated by action chunking but weakens the transition signal significantly.
+
+Fix for future datasets: Record action_t = [q_{t+1} - q_t, gripper_{t+1}] (forward-looking) instead of [q_t - q_{t-1}, gripper_t] (backward-echoing). Or better: record absolute joint positions as actions and use use_delta_action_transform=True in the config, which matches the pretrained model's convention.
+
+
+Now I will try the pi0_ur5 config with training: UR5_THIRD_3 that was overfitted. It was moving good to object, but not gripping good.
+
+Result: Didnt want to grip it.
+
+Lets try with the same non overfit model. UR5_THIRD_4
 

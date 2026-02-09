@@ -715,7 +715,8 @@ class Args:
     fake_cam: bool = os.environ.get("FAKE_CAM", "0") == "1"
 
     # Dataset recording
-    fps: float = 10.0
+    # NOTE: pi0 pretrained model expects 20 Hz for UR5e (see docs/norm_stats.md).
+    fps: float = 20.0
     jpeg_quality: int = 95
 
     # Stop conditions

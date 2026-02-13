@@ -298,5 +298,39 @@ Now I will try the pi0_ur5 config with training: UR5_THIRD_3 that was overfitted
 
 Result: Didnt want to grip it.
 
+
+
 Lets try with the same non overfit model. UR5_THIRD_4
 
+Gripping now works. But still movemement is not good enough. 
+
+
+Lets try UR5_THIRD_5 that uses pi05 droid checkpoint. Loss showed a interesting curve, it started way higher (1.5 vs 0.08)
+
+
+
+Create new dataset LPSlvlv/ur5_pickandplace_4" which is combination of dataset 2 and 3. Will try it with pi0_ur5. Increased also to 500 training steps. Without reloading normalization statistics.
+
+    TrainConfig(
+        name="pi0_ur5",
+        model=pi0_config.Pi0Config(),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_4",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                # Recommended: load prompt from the LeRobot `task` field.
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=500,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+
+
+
+
+LPSlvlv/ur5_pickandplace_5: Dataset pickandplace_3 converted to absolute actions using convert_raw_deltas_to_absolute.py. Fixes the backward-looking delta bug (old: action[i] = q[i] - q[i-1], new: action[i] = state[i+1], forward-looking absolute). Also enabled use_delta_action_transform=True in LeRobotUR5DataConfig so training applies DeltaActions (abs→delta) and inference applies AbsoluteActions (delta→abs). Bridge ACTION_MODE changed to absolute. FPS remains 10 (original recording rate).

@@ -1,11 +1,11 @@
 """
 Replay a freedrive waypoint trajectory on a UR5 (moveJ with blending) and record a raw dataset.
 
-During replay, records at fixed FPS (default 10 Hz):
+During replay, records at fixed FPS (default 20 Hz):
 - external RGB image (256x256)
 - optional wrist RGB image (256x256)
 - robot proprio state (actual_q + gripper_cmd) => 7 dims
-- action (delta joints + absolute gripper_cmd) => 7 dims
+- action (absolute joints + absolute gripper_cmd) => 7 dims (forward-looking: action[i] = state[i+1])
 - task string (language instruction / prompt)
 
 Raw episode format (one folder per episode):
@@ -889,7 +889,7 @@ def main(args: Args) -> None:
         "gripper_default": g_cmd,
         "gripper_waypoints": gripper_wp,
         "state_spec": {"dtype": "float32", "shape": [7], "desc": "actual_q(6) + gripper_cmd(1)"},
-        "action_spec": {"dtype": "float32", "shape": [7], "desc": "delta_q(6) + absolute gripper_cmd(1)"},
+        "action_spec": {"dtype": "float32", "shape": [7], "desc": "absolute_q(6) + absolute gripper_cmd(1)"},
     }
     (ep_dir / "meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
     (ep_dir / "waypoints.json").write_text(json.dumps(waypoints_obj, indent=2))
@@ -916,7 +916,7 @@ def main(args: Args) -> None:
     steps_path = ep_dir / "steps.jsonl"
     f_steps = steps_path.open("w", encoding="utf-8")
 
-    prev_q: np.ndarray | None = None
+    pending_step: dict | None = None  # buffered step; action filled in next tick
     i = 0
     t0 = time.time()
     next_tick = t0
@@ -999,14 +999,8 @@ def main(args: Args) -> None:
                         except Exception as e:
                             print(f"Warning: Gripper move failed: {e}")
 
-            # Build state/action
+            # Build state (absolute joint positions + gripper)
             state = np.asarray([*q.tolist(), g_cmd], dtype=np.float32)  # (7,)
-            if prev_q is None:
-                delta_q = np.zeros((6,), dtype=np.float32)
-            else:
-                delta_q = (q - prev_q).astype(np.float32)
-            actions = np.asarray([*delta_q.tolist(), g_cmd], dtype=np.float32)  # (7,)
-            prev_q = q
 
             # Save images
             base_rel = Path("images/base") / f"{i:06d}.jpg"
@@ -1014,20 +1008,25 @@ def main(args: Args) -> None:
             _write_jpg_rgb(ep_dir / base_rel, base_rgb, quality=args.jpeg_quality)
             _write_jpg_rgb(ep_dir / wrist_rel, wrist_rgb, quality=args.jpeg_quality)
 
-            step = {
+            # Forward-looking absolute actions: action[i] = state[i+1].
+            # Write the previous step now that we know its forward action.
+            if pending_step is not None:
+                pending_step["actions"] = state.tolist()
+                f_steps.write(json.dumps(pending_step) + "\n")
+                f_steps.flush()
+
+            # Buffer current step (action will be filled on next tick)
+            pending_step = {
                 "i": i,
                 "t_wall": tick_time,
                 "q_actual": q.tolist(),
                 "qd_actual": qd.tolist(),
                 "gripper_cmd": float(g_cmd),
                 "state": state.tolist(),
-                "actions": actions.tolist(),
                 "image_path": str(base_rel),
                 "wrist_image_path": str(wrist_rel),
                 "task": prompt,
             }
-            f_steps.write(json.dumps(step) + "\n")
-            f_steps.flush()
             i += 1
 
             # Stop condition: near final waypoint and stable
@@ -1044,6 +1043,11 @@ def main(args: Args) -> None:
                 final_stable_since = None
 
     finally:
+        # Write last buffered step (action = hold current position)
+        if pending_step is not None:
+            pending_step["actions"] = pending_step["state"]
+            f_steps.write(json.dumps(pending_step) + "\n")
+            f_steps.flush()
         f_steps.close()
         _teardown_rtde_control(ctrl)
         try:

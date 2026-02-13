@@ -360,10 +360,11 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
 class LeRobotUR5DataConfig(DataConfigFactory):
     """Data pipeline config for training on LeRobot-formatted UR5 datasets."""
 
-    # If true, interpret dataset actions as absolute (joint targets) and convert to deltas.
-    # If your dataset already stores delta actions (as in local/scripts/ur5_replay_and_record_raw.py),
-    # leave this as False.
-    use_delta_action_transform: bool = False
+    # If true, interpret dataset actions as absolute (joint targets) and convert to deltas
+    # for training.  During inference the inverse (AbsoluteActions) is applied so the model
+    # outputs absolute joint positions.  The recorder (local/scripts/ur5_replay_and_record_raw.py)
+    # stores forward-looking absolute actions: action[i] = state[i+1].
+    use_delta_action_transform: bool = True
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
@@ -701,16 +702,18 @@ _CONFIGS = [
     TrainConfig(
         name="pi05_ur5",
         model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
-        data=SimpleDataConfig(
-            assets=AssetsConfig(asset_id="ur5e"),
-            data_transforms=lambda model: _transforms.Group(
-                inputs=[ur5_policy.UR5Inputs(model_type=ModelType.PI05)],
-                outputs=[ur5_policy.UR5Outputs()],
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_5",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
             ),
             base_config=DataConfig(
                 prompt_from_task=True,
             ),
         ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=500,
         policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     #
@@ -722,7 +725,7 @@ _CONFIGS = [
         name="pi0_ur5",
         model=pi0_config.Pi0Config(),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_4",
+            repo_id="LPSlvlv/ur5_pickandplace_5",
             assets=AssetsConfig(
                 assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
                 asset_id="ur5e",
@@ -746,7 +749,7 @@ _CONFIGS = [
             max_token_len=180,
         ),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_3",
+            repo_id="LPSlvlv/ur5_pickandplace_5",
             assets=AssetsConfig(
                 # Use pi05_base assets to get quantile normalization stats required for pi05 models.
                 assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
@@ -774,7 +777,7 @@ _CONFIGS = [
             action_horizon=15,  # Must match base pi05_ur5 config
         ),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_3",
+            repo_id="LPSlvlv/ur5_pickandplace_5",
             # Norm stats behavior:
             # - By default, this config expects you to compute stats for your dataset and store them locally under:
             #     assets/pi05_ur5_low_mem_finetune/ur5e/norm_stats.json
@@ -828,7 +831,7 @@ _CONFIGS = [
             action_horizon=15,
         ),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_3",
+            repo_id="LPSlvlv/ur5_pickandplace_5",
             # Key difference vs `pi05_ur5_low_mem_finetune`: load stats from the base checkpoint assets dir.
             assets=AssetsConfig(
                 assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",

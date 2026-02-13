@@ -52,7 +52,7 @@ def main(
     raw_dir: Path,
     repo_id: str,
     *,
-    fps: int = 10,
+    fps: int = 20,
     robot_type: str = "ur5e",
     push_to_hub: bool = True,
 ) -> None:

@@ -67,7 +67,7 @@ if INFER_PERIOD is not None and "HOLD_PER_STEP" not in os.environ:
         raise ValueError(f"HORIZON_STEPS must be > 0 when using INFER_PERIOD, got {HORIZON_STEPS}")
     HOLD_PER_STEP = INFER_PERIOD / float(HORIZON_STEPS)
 
-ACTION_MODE = os.environ.get("ACTION_MODE", "delta").lower()
+ACTION_MODE = os.environ.get("ACTION_MODE", "absolute").lower()
 MAX_STEP_DEG = float(os.environ.get("MAX_STEP_DEG", "2.0"))
 
 DRY_RUN = os.environ.get("DRY_RUN", "0") == "1"
@@ -164,16 +164,6 @@ def _start_rgb(serial: str) -> "rs.pipeline | None":
 
 def _read_rgb(pipe: "rs.pipeline") -> np.ndarray | None:
     frames = pipe.wait_for_frames(RS_TIMEOUT_MS)
-    # Drain buffered frames so we always use the freshest image.
-    # The RealSense streams at RS_FPS (default 60 Hz), but the control loop
-    # only reads once per inference cycle (~1-2s). Without draining, the
-    # robot acts on frames that are seconds old.
-    try:
-        while True:
-            newer = pipe.poll_for_frames()
-            frames = newer
-    except RuntimeError:
-        pass  # No more buffered frames available
     frame = frames.get_color_frame()
     if not frame:
         return None

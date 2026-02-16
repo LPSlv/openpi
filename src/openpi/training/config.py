@@ -703,7 +703,7 @@ _CONFIGS = [
         name="pi05_ur5",
         model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_5",
+            repo_id="LPSlvlv/ur5_busthetable_6",
             assets=AssetsConfig(
                 assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
                 asset_id="ur5e",
@@ -725,7 +725,7 @@ _CONFIGS = [
         name="pi0_ur5",
         model=pi0_config.Pi0Config(),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_5",
+            repo_id="LPSlvlv/ur5_busthetable_6",
             assets=AssetsConfig(
                 assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
                 asset_id="ur5e",
@@ -749,7 +749,7 @@ _CONFIGS = [
             max_token_len=180,
         ),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_5",
+            repo_id="LPSlvlv/ur5_busthetable_6",
             assets=AssetsConfig(
                 # Use pi05_base assets to get quantile normalization stats required for pi05 models.
                 assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
@@ -777,7 +777,7 @@ _CONFIGS = [
             action_horizon=15,  # Must match base pi05_ur5 config
         ),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_5",
+            repo_id="LPSlvlv/ur5_busthetable_6",
             # Norm stats behavior:
             # - By default, this config expects you to compute stats for your dataset and store them locally under:
             #     assets/pi05_ur5_low_mem_finetune/ur5e/norm_stats.json
@@ -831,7 +831,7 @@ _CONFIGS = [
             action_horizon=15,
         ),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_pickandplace_5",
+            repo_id="LPSlvlv/ur5_busthetable_6",
             # Key difference vs `pi05_ur5_low_mem_finetune`: load stats from the base checkpoint assets dir.
             assets=AssetsConfig(
                 assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",

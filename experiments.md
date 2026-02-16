@@ -334,3 +334,78 @@ Create new dataset LPSlvlv/ur5_pickandplace_4" which is combination of dataset 2
 
 
 LPSlvlv/ur5_pickandplace_5: Dataset pickandplace_3 converted to absolute actions using convert_raw_deltas_to_absolute.py. Fixes the backward-looking delta bug (old: action[i] = q[i] - q[i-1], new: action[i] = state[i+1], forward-looking absolute). Also enabled use_delta_action_transform=True in LeRobotUR5DataConfig so training applies DeltaActions (abs→delta) and inference applies AbsoluteActions (delta→abs). Bridge ACTION_MODE changed to absolute. FPS remains 10 (original recording rate).
+Based on this run experiment ur5_fifth_1:
+    TrainConfig(
+        name="pi05_ur5",
+        model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_pickandplace_5",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=500,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+
+
+
+
+
+                               Timing Statistics                               
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━┳━━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━┓
+┃ Metric              ┃ Mean ┃ S… ┃  P25 ┃  P50 ┃   P75 ┃  P90 ┃   P95 ┃  P99 ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━╇━━━━━━╇━━━━━━╇━━━━━━━╇━━━━━━╇━━━━━━━╇━━━━━━┩
+│ client_infer_ms     │ 232… │ 1… │ 231… │ 232… │ 233.5 │ 235… │ 235.5 │ 237… │
+│ policy_infer_ms     │ 187… │ 0… │ 187… │ 187… │ 188.2 │ 188… │ 188.4 │ 189… │
+│ server_infer_ms     │ 231… │ 1… │ 230… │ 231… │ 232.1 │ 233… │ 234.0 │ 235… │
+│ server_prev_total_… │ 233… │ 3… │ 231… │ 232… │ 233.7 │ 235… │ 238.2 │ 245… │
+└─────────────────────┴──────┴────┴──────┴──────┴───────┴──────┴───────┴──────┘
+
+From the policy:
+
+action_horizon = 15 (15 action steps per inference)
+Dataset recorded at 10Hz → each step = 0.1s of real time
+Recommended bridge settings for pi05_ur5:
+
+
+# Action execution
+ACTION_MODE=absolute          # matches AbsoluteActions output transform
+HORIZON_STEPS=15              # use full action horizon from policy
+HOLD_PER_STEP=0.1             # 0.1s per step = 10Hz, matches dataset recording rate
+
+# servoJ parameters (VEL/ACC are ignored by UR firmware for servoJ)
+DT=0.02                       # 50Hz servoJ command rate (smooth updates within each step)
+VEL=0.5                       # not used by servoJ, but set non-zero
+ACC=0.5                       # not used by servoJ, but set non-zero  
+LOOKAHEAD=0.1                 # moderate trajectory smoothing (range 0.03-0.2)
+GAIN=300                      # position tracking stiffness (range 100-2000)
+Timing per cycle:
+
+Inference: ~232ms
+Execution: 15 steps x 0.1s = 1.5s
+Total cycle: ~1.73s
+Why these values:
+
+Parameter	Value	Reasoning
+HORIZON_STEPS=15	Matches action_horizon=15 from policy	
+HOLD_PER_STEP=0.1	1/10Hz = 0.1s, matches dataset timestep	
+DT=0.02	5 servoJ updates per action step (smooth)	
+LOOKAHEAD=0.1	Balances smoothness vs responsiveness	
+GAIN=300	Stiffer than 150 (previous) — absolute targets can handle it since the model predicts positions close to current state	
+For docker, that would be:
+
+
+-e ACTION_MODE=absolute \
+-e HORIZON_STEPS=15 \
+-e HOLD_PER_STEP=0.1 \
+-e DT=0.02 \
+-e VEL=0.5 \
+-e ACC=0.5 \
+-e LOOKAHEAD=0.1 \
+-e GAIN=300

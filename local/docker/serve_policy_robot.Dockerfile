@@ -181,7 +181,7 @@ ENV QT_QPA_PLATFORM_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugi
 
 # Policy server arguments (see scripts/serve_policy.py for options)
 # Default to UR5 environment mode for robot control with local checkpoint
-ENV SERVER_ARGS="--env=UR5 policy:checkpoint --policy.config=pi0_ur5 --policy.dir=checkpoints/pi0_ur5/ur5_fourth_1/499"
+ENV SERVER_ARGS="policy:checkpoint --policy.config=pi05_ur5 --policy.dir=checkpoints/pi05_ur5/ur5_fifth_1/499"
 
 # Seconds to wait for policy server to start before launching robot bridge
 ENV SERVER_WAIT=6

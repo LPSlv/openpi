@@ -409,3 +409,28 @@ For docker, that would be:
 -e ACC=0.5 \
 -e LOOKAHEAD=0.1 \
 -e GAIN=300
+
+This experiment finally created good results. The robot was moving to the blue object, picking it up and going to the cardboard box to drop it. The only issue being that in the box, it doesnt want to drop it.
+
+
+
+Created LPSlvlv/ur5_busthetable_6 dataset which is LPSlvlv/ur5_busthetable_2 datsaset but fixed and converted to absolute
+Based on this run experiment ur5_sixsth_1:
+
+    TrainConfig(
+        name="pi05_ur5",
+        model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_busthetable_6",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=500,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),

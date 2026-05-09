@@ -67,10 +67,11 @@ class Pi0(_model.BaseModel):
     def __init__(self, config: pi0_config.Pi0Config, rngs: nnx.Rngs):
         super().__init__(config.action_dim, config.action_horizon, config.max_token_len)
         self.pi05 = config.pi05
-        # Flax NNX module-attr constraint: tuple, not array (cast in compute_loss).
+        # flax nnx rejects array-typed module attrs, so store as a tuple
+        # and cast to jnp.array inside compute_loss
         self._loss_dim_weights: tuple[float, ...] | None = None
         if config.action_dim_weights is not None:
-            # Padded dims → 0; unlisted real dims → 1.0.
+            # padded dims get weight 0, unlisted real dims keep weight 1.0
             real_dims = max(idx for idx, _ in config.action_dim_weights) + 1
             w = [0.0] * config.action_dim
             for i in range(real_dims):
@@ -224,7 +225,7 @@ class Pi0(_model.BaseModel):
 
         sq_err = jnp.square(v_t - u_t)
 
-        # stop_gradient: diagnostics only.
+        # stop_gradient so diagnostics don't bleed into the training gradient
         per_dim = jax.lax.stop_gradient(jnp.mean(sq_err, axis=(0, 1)))  # (action_dim,)
         diagnostics = {
             "loss_joints_mean": jnp.mean(per_dim[:6]),

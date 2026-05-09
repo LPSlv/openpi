@@ -1,14 +1,6 @@
-"""
-Read and display the current state of a UR robot arm.
+"""Continuously read and print UR robot state (joints, TCP pose, mode, freq).
 
-This script continuously reads and prints:
-- Joint positions (degrees)
-- Joint velocities (degrees/second)
-- TCP pose (position and orientation)
-- Robot mode and safety status
-- Update frequency
-
-Press Ctrl+C to stop.
+Stops on Ctrl+C.
 """
 
 import time
@@ -28,13 +20,12 @@ t0 = time.time()
 
 try:
     while True:
-        q_rad  = np.array(rtde_r.getActualQ(),  float)       # [rad]
-        qd_rad = np.array(rtde_r.getActualQd(), float)       # [rad/s]
-        tcp    = np.array(rtde_r.getActualTCPPose(), float)  # [x y z rx ry rz] -> m, rad
-        mode = rtde_r.getRobotMode()                         # 7 = RUNNING
-        sfty = rtde_r.getSafetyMode()                        # 1 = NORMAL
+        q_rad  = np.array(rtde_r.getActualQ(),  float)       # rad
+        qd_rad = np.array(rtde_r.getActualQd(), float)       # rad/s
+        tcp    = np.array(rtde_r.getActualTCPPose(), float)  # x y z rx ry rz, m and rad
+        mode = rtde_r.getRobotMode()                         # 7 == RUNNING
+        sfty = rtde_r.getSafetyMode()                        # 1 == NORMAL
 
-        # convert joints to degrees and deg/s
         q_deg  = q_rad * RAD2DEG
         qd_deg = qd_rad * RAD2DEG
 

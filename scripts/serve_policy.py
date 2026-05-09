@@ -7,8 +7,8 @@ import tyro
 
 from openpi.policies import policy as _policy
 from openpi.policies import policy_config as _policy_config
-from openpi.shared import normalize as _normalize
 from openpi.serving import websocket_policy_server
+from openpi.shared import normalize as _normalize
 from openpi.training import config as _config
 
 
@@ -129,10 +129,7 @@ def main(args: Args) -> None:
     # Resolve which checkpoint/config we actually loaded so we can surface it in metadata/logs.
     # This helps avoid the common footgun of thinking you're serving "the new checkpoint" while
     # actually still running the default one from SERVER_ARGS / --env.
-    if isinstance(args.policy, Checkpoint):
-        resolved_ckpt = args.policy
-    else:
-        resolved_ckpt = DEFAULT_CHECKPOINT[args.env]
+    resolved_ckpt = args.policy if isinstance(args.policy, Checkpoint) else DEFAULT_CHECKPOINT[args.env]
 
     policy_metadata = dict(policy.metadata)
     policy_metadata["train_config"] = resolved_ckpt.config

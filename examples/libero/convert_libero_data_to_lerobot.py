@@ -20,8 +20,8 @@ Running this conversion script will take approximately 30 minutes.
 
 import shutil
 
-from lerobot.utils.constants import HF_LEROBOT_HOME
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.utils.constants import HF_LEROBOT_HOME
 import tensorflow_datasets as tfds
 import tyro
 

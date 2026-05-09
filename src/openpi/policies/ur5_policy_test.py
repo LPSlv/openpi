@@ -31,4 +31,3 @@ def test_ur5_inputs_validates_state_shape():
 def test_ur5_outputs_slices():
     out = ur5_policy.UR5Outputs()({"actions": np.random.randn(5, 12).astype(np.float32)})
     assert out["actions"].shape == (5, 7)
-

@@ -6,7 +6,7 @@ import dataclasses
 import difflib
 import logging
 import pathlib
-from typing import Any, Literal, Protocol, TypeAlias
+from typing import Any, ClassVar, Literal, Protocol, TypeAlias
 
 import etils.epath as epath
 import flax.nnx as nnx
@@ -386,7 +386,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
     repack_structure: dict[str, str] | None = dataclasses.field(default=None, hash=False, compare=False)
 
     # Default repack: maps YOUR dataset columns to UR5Inputs training format.
-    _DEFAULT_REPACK = {
+    _DEFAULT_REPACK: ClassVar[dict[str, str]] = {
         "base_rgb": "image",
         "wrist_rgb": "wrist_image",
         "joints": "joints",
@@ -397,7 +397,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
 
     # F-Fer's dataset columns → UR5Inputs training format.
     # observation.state (7D) is mapped to "joints"; UR5Inputs Format 2 handles the split.
-    FFER_REPACK = {
+    FFER_REPACK: ClassVar[dict[str, str]] = {
         "joints": "observation.state",
         "base_rgb": "observation.images.zed2i_left",
         "wrist_rgb": "observation.images.zedm_left",
@@ -408,11 +408,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         structure = self.repack_structure if self.repack_structure is not None else self._DEFAULT_REPACK
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.RepackTransform(structure)
-            ]
-        )
+        repack_transform = _transforms.Group(inputs=[_transforms.RepackTransform(structure)])
 
         # These transforms are the ones we wrote earlier.
         data_transforms = _transforms.Group(

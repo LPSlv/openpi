@@ -1,9 +1,8 @@
 """UR5 real robot environment using RTDE for control."""
 
-import os
 import socket
 import time
-from typing import Optional, List
+
 import numpy as np
 import rtde_control
 import rtde_receive
@@ -11,6 +10,7 @@ import rtde_receive
 # Try to import cv2 for image processing
 try:
     import cv2
+
     HAS_CV2 = True
 except ImportError:
     HAS_CV2 = False
@@ -18,6 +18,7 @@ except ImportError:
 # Try to import RealSense, but allow it to be optional
 try:
     import pyrealsense2 as rs
+
     HAS_REALSENSE = True
 except ImportError:
     HAS_REALSENSE = False
@@ -43,9 +44,9 @@ class RealEnv:
         self,
         ur_ip: str,
         *,
-        reset_position: Optional[List[float]] = None,
-        rs_base_serial: Optional[str] = None,
-        rs_wrist_serial: Optional[str] = None,
+        reset_position: list[float] | None = None,
+        rs_base_serial: str | None = None,
+        rs_wrist_serial: str | None = None,
         gripper_port: int = 0,
         fake_cam: bool = False,
     ):
@@ -95,6 +96,7 @@ class RealEnv:
                 rgb = np.flip(bgr, axis=2)  # Fallback: flip channels
             # Resize to 224x224 with padding
             from openpi_client import image_tools
+
             rgb = image_tools.resize_with_pad(rgb, 224, 224)
             rgb = image_tools.convert_to_uint8(rgb)
             return rgb
@@ -250,9 +252,9 @@ class RealEnv:
 def make_real_env(
     ur_ip: str,
     *,
-    reset_position: Optional[List[float]] = None,
-    rs_base_serial: Optional[str] = None,
-    rs_wrist_serial: Optional[str] = None,
+    reset_position: list[float] | None = None,
+    rs_base_serial: str | None = None,
+    rs_wrist_serial: str | None = None,
     gripper_port: int = 0,
     fake_cam: bool = False,
 ) -> RealEnv:

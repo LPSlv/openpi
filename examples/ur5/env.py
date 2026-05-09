@@ -17,8 +17,8 @@ class UR5RealEnvironment(_environment.Environment):
         self,
         ur_ip: str,
         reset_position: Optional[List[float]] = None,  # noqa: UP006,UP007
-        rs_base_serial: Optional[str] = None,
-        rs_wrist_serial: Optional[str] = None,
+        rs_base_serial: str | None = None,
+        rs_wrist_serial: str | None = None,
         gripper_port: int = 0,
         fake_cam: bool = False,
         render_height: int = 224,
@@ -76,7 +76,11 @@ class UR5RealEnvironment(_environment.Environment):
             img = image_tools.resize_with_pad(img, self._render_height, self._render_width)
             return image_tools.convert_to_uint8(img)
 
-        base_img = _proc(base_img) if base_img is not None else np.zeros((self._render_height, self._render_width, 3), dtype=np.uint8)
+        base_img = (
+            _proc(base_img)
+            if base_img is not None
+            else np.zeros((self._render_height, self._render_width, 3), dtype=np.uint8)
+        )
         wrist_img = _proc(wrist_img) if wrist_img is not None else base_img.copy()
 
         return {

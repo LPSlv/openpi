@@ -151,7 +151,7 @@ def _compute_gripper_oversample_weights(
     # Walk through wrappers (TransformedDataset, etc.) to find the LeRobotDataset.
     raw = dataset
     while hasattr(raw, "_dataset"):
-        raw = raw._dataset
+        raw = raw._dataset  # noqa: SLF001
     if hasattr(raw, "hf_dataset"):
         # LeRobotDataset stores data in a HuggingFace dataset.
         # Use select_columns to load ONLY gripper + episode_index (avoids loading images).
@@ -216,7 +216,7 @@ def create_torch_dataset(
         # lerobot v3 returns tasks as a DataFrame; convert to dict[int, str].
         tasks = dataset_meta.tasks
         if not isinstance(tasks, dict):
-            tasks = dict(zip(tasks["task_index"], tasks.index))
+            tasks = dict(zip(tasks["task_index"], tasks.index, strict=False))
         dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(tasks)])
 
     return dataset
@@ -378,11 +378,11 @@ def create_torch_data_loader(
     # To revert: set gripper_oversample_factor=None in LeRobotUR5DataConfig.
     gripper_sampler = None
     if data_config.gripper_oversample_factor is not None:
-        logging.info(f"Pre-scanning dataset for gripper transitions (oversample_factor={data_config.gripper_oversample_factor})...")
-        weights = _compute_gripper_oversample_weights(dataset, action_horizon, data_config.gripper_oversample_factor)
-        gripper_sampler = torch.utils.data.WeightedRandomSampler(
-            weights, num_samples=len(dataset), replacement=True
+        logging.info(
+            f"Pre-scanning dataset for gripper transitions (oversample_factor={data_config.gripper_oversample_factor})..."
         )
+        weights = _compute_gripper_oversample_weights(dataset, action_horizon, data_config.gripper_oversample_factor)
+        gripper_sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(dataset), replacement=True)
 
     dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
 

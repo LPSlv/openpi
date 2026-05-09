@@ -168,8 +168,16 @@ class Unnormalize(DataTransformFn):
         )
 
     def _unnormalize(self, x, stats: NormStats):
-        mean = stats.mean[..., : x.shape[-1]] if stats.mean.shape[-1] > x.shape[-1] else pad_to_dim(stats.mean, x.shape[-1], axis=-1, value=0.0)
-        std = stats.std[..., : x.shape[-1]] if stats.std.shape[-1] > x.shape[-1] else pad_to_dim(stats.std, x.shape[-1], axis=-1, value=1.0)
+        mean = (
+            stats.mean[..., : x.shape[-1]]
+            if stats.mean.shape[-1] > x.shape[-1]
+            else pad_to_dim(stats.mean, x.shape[-1], axis=-1, value=0.0)
+        )
+        std = (
+            stats.std[..., : x.shape[-1]]
+            if stats.std.shape[-1] > x.shape[-1]
+            else pad_to_dim(stats.std, x.shape[-1], axis=-1, value=1.0)
+        )
         return x * (std + 1e-6) + mean
 
     def _unnormalize_quantile(self, x, stats: NormStats):

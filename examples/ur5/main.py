@@ -40,7 +40,9 @@ def main(args: Args) -> None:
     logging.info(f"Server metadata: {ws_client_policy.get_server_metadata()}")
 
     metadata = ws_client_policy.get_server_metadata()
-    action_horizon = int(metadata.get("action_horizon", 15)) if args.action_horizon is None else int(args.action_horizon)
+    action_horizon = (
+        int(metadata.get("action_horizon", 15)) if args.action_horizon is None else int(args.action_horizon)
+    )
     runtime = _runtime.Runtime(
         environment=_env.UR5RealEnvironment(
             ur_ip=args.ur_ip,

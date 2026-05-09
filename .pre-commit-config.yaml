@@ -1,4 +1,4 @@
-exclude: third_party/
+exclude: '^(third_party/|ur5/|examples/ur5/)'
 
 repos:
   - repo: https://github.com/astral-sh/uv-pre-commit

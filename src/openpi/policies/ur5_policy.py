@@ -31,7 +31,6 @@ def make_ur5_example() -> dict:
 
 @dataclasses.dataclass(frozen=True)
 class UR5Inputs(transforms.DataTransformFn):
-
     model_type: _model.ModelType = _model.ModelType.PI0
 
     def __call__(self, data: dict) -> dict:
@@ -104,4 +103,3 @@ class UR5Inputs(transforms.DataTransformFn):
 class UR5Outputs(transforms.DataTransformFn):
     def __call__(self, data: dict) -> dict:
         return {"actions": np.asarray(data["actions"][:, :7])}
-

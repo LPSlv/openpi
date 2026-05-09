@@ -1,33 +1,21 @@
-# Dockerfile for running π₀ policy server with robot control in a single container.
-#
-# This container combines:
-# 1. Policy server (serves the π₀ model via websocket)
-# 2. RealSense camera access (for robot vision)
-# 3. UR robot control (via RTDE for UR5/UR10 arms)
-#
-# The container runs both the policy server and the robot bridge script,
-# making it a complete "all-in-one" solution for robot control.
-#
-# Usage: See launch_guide.md for detailed instructions
+# All-in-one image: pi0 policy server + RealSense capture + UR5 RTDE bridge.
+# See ur5/docs/deployment.md for setup and runtime instructions.
 
 FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
 COPY --from=ghcr.io/astral-sh/uv:0.5.1 /uv /uvx /bin/
 WORKDIR /app
 
-# Set environment variables to prevent interactive prompts during package installation
+# silence interactive apt prompts
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# Install system dependencies
-# - Build tools: needed for compiling Python packages
-# - pkg-config: required for building PyAV (av package)
-# - ffmpeg: required for PyAV (av package) - need version 7
-# - libusb-1.0-0: required for RealSense camera access
-# - libgl1, libglib2.0-0: OpenCV dependencies
-# - libxext6, libxrender1, libsm6: X11 display support for OpenCV imshow
-# - libgtk-3-0, libgdk-pixbuf2.0-0: GTK+ runtime libraries for OpenCV GUI (cv2.imshow)
-# - libxkbcommon-x11-0 + libxcb*: Qt/X11 runtime deps (opencv-python wheels often use Qt HighGUI)
-# - libqt5gui5 ships Qt5 platform plugins on Ubuntu 22.04 (incl. platforms/libqxcb.so)
+# system deps:
+#   build tools + pkg-config: compile PyAV (needs FFmpeg 7, built below)
+#   libusb-1.0-0: RealSense
+#   libgl1 / libglib2.0-0 / libxext6 / libxrender1 / libsm6: OpenCV
+#   libgtk-3-0 / libgdk-pixbuf2.0-0: cv2.imshow GTK backend
+#   libxkbcommon-x11-0 + libxcb*: Qt/X11 runtime for the opencv-python Qt plugin
+#   libqt5gui5: Qt5 platform plugins (incl. platforms/libqxcb.so)
 RUN apt-get update && apt-get install -y \
     git git-lfs linux-headers-generic build-essential clang \
     curl wget ca-certificates xz-utils pkg-config \
@@ -42,7 +30,7 @@ RUN apt-get update && apt-get install -y \
     libqt5gui5 libqt5widgets5 \
  && rm -rf /var/lib/apt/lists/*
 
-# Build and install FFmpeg 7 from source (PyAV requires FFmpeg 7)
+# PyAV requires FFmpeg 7, build it from source
 ARG FFMPEG_VERSION="7.1.3"
 RUN mkdir -p /tmp/ffmpeg-src && \
     curl -fsSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" -o /tmp/ffmpeg.tar.xz && \
@@ -61,22 +49,21 @@ RUN mkdir -p /tmp/ffmpeg-src && \
     ldconfig && \
     rm -rf /tmp/ffmpeg-src /tmp/ffmpeg.tar.xz
 
-# Ensure pkg-config can find FFmpeg's .pc files
+# point pkg-config at the freshly-built FFmpeg
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig
 
-# Configure uv to use copy mode (for bind mounts) and place venv outside /app
+# uv: use copy mode for bind mounts, put the venv outside /app so it survives them
 ENV UV_LINK_MODE=copy
 ENV UV_PROJECT_ENVIRONMENT=/.venv
 
-# Create Python 3.11 virtual environment (OpenPI requires Python 3.11)
+# openpi requires Python 3.11
 RUN uv venv --python 3.11.9 $UV_PROJECT_ENVIRONMENT
 
-# Install Cython before uv sync (required for building av package)
+# Cython is needed to build the av package during uv sync below
 RUN /.venv/bin/python -m ensurepip --upgrade && \
     /.venv/bin/python -m pip install --no-cache-dir Cython
 
-# Install project dependencies from lockfile
-# This installs all openpi dependencies including the openpi-client package
+# install project dependencies (incl. openpi-client) from lockfile
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -84,28 +71,21 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=packages/openpi-client/src,target=packages/openpi-client/src \
     GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-install-project --no-dev
 
-# Apply transformers library patches for PyTorch support
-# These patches enable AdaRMS, correct activation precision, and KV cache usage
+# patch the transformers library: enables AdaRMS, fixes activation precision,
+# and turns on KV cache usage for the openpi pytorch path
 COPY src/openpi/models_pytorch/transformers_replace/ /tmp/transformers_replace/
 RUN /.venv/bin/python -c "import transformers, os; print(os.path.dirname(transformers.__file__))" | \
     xargs -I{} bash -lc 'cp -r /tmp/transformers_replace/* {}' && rm -rf /tmp/transformers_replace
 
-# Install additional runtime dependencies for robot control
-# - pyrealsense2: RealSense camera SDK
-# - opencv-python: OpenCV with GUI support (installed in venv, not system)
-# - ur-rtde: UR robot RTDE interface (rtde_receive, rtde_control)
-# - numpy: Numerical operations (installed in venv via uv sync, but ensure it's available)
-# - polars: Data processing
-# Note: We install opencv-python in venv instead of system python3-opencv
-# to avoid conflicts with system numpy (Python 3.10) vs venv numpy (Python 3.11)
-
-# Install pip tools first
+# extra runtime deps: pyrealsense2 (camera SDK), opencv-python (GUI build),
+# ur-rtde (UR control), polars. installed in the venv so they don't collide
+# with the host's system numpy/python
 RUN /.venv/bin/python -m ensurepip --upgrade && \
     /.venv/bin/python -m pip install --no-cache-dir -U pip setuptools wheel
 
-# Install opencv-python (GUI build).
-# Note: our lockfile also includes opencv-python-headless; if both are installed, whichever was installed last
-# typically "wins" the `cv2` module. We explicitly remove headless variants first so `cv2.imshow` works.
+# the lockfile also brings opencv-python-headless; whichever opencv variant is
+# installed last wins the `cv2` module, so we wipe the headless ones before
+# pinning the GUI build, otherwise cv2.imshow silently no-ops
 RUN /.venv/bin/python -m pip uninstall -y \
       opencv-python opencv-contrib-python opencv-python-headless opencv-contrib-python-headless \
     || true
@@ -114,8 +94,8 @@ RUN /.venv/bin/python -m pip install --no-cache-dir "opencv-python==4.11.0.86" &
 import numpy
 import cv2
 
-print("✓ numpy", numpy.__version__)
-print("✓ cv2 module", getattr(cv2, "__file__", None))
+print("OK numpy", numpy.__version__)
+print("OK cv2 module", getattr(cv2, "__file__", None))
 
 ver = getattr(cv2, "__version__", None)
 if ver is None and hasattr(cv2, "getVersionString"):
@@ -124,8 +104,8 @@ if ver is None and hasattr(cv2, "getVersionString"):
     except Exception:
         ver = None
 
-print("✓ opencv version", ver)
-print("✓ has imshow", hasattr(cv2, "imshow"))
+print("OK opencv version", ver)
+print("OK has imshow", hasattr(cv2, "imshow"))
 
 if hasattr(cv2, "getBuildInformation"):
     bi = cv2.getBuildInformation()
@@ -135,70 +115,52 @@ else:
     print("NOTE: cv2.getBuildInformation not available in this build")
 PY
 
-# Install ur-rtde (usually fast)
 RUN /.venv/bin/python -m pip install --no-cache-dir ur-rtde && \
-    echo "✓ ur-rtde installed"
+    echo "ur-rtde installed"
 
-# Install polars (usually fast)
 RUN /.venv/bin/python -m pip install --no-cache-dir polars && \
-    echo "✓ polars installed"
+    echo "polars installed"
 
-# Install pyrealsense2 last (this is often the slowest, may compile from source)
+# pyrealsense2 last because it's the slowest and sometimes compiles from source
 RUN echo "Installing pyrealsense2 (this may take several minutes)..." && \
     /.venv/bin/python -m pip install --no-cache-dir --verbose pyrealsense2 && \
-    echo "✓ pyrealsense2 installed"
+    echo "pyrealsense2 installed"
 
-# Do NOT add system Python site-packages to PYTHONPATH
-# This was causing conflicts between system numpy (Python 3.10) and venv numpy (Python 3.11)
-# All packages are now installed in the venv, so PYTHONPATH should only include venv paths
-
+# do NOT extend PYTHONPATH with system site-packages: that mixes host numpy
+# (python 3.10) with venv numpy (python 3.11) and breaks at import
 ENV PATH=/.venv/bin:$PATH
-# Ensure ur5 package is importable (bind-mounted at /app at runtime)
+# /app gets bind-mounted at runtime, this lets `import ur5...` resolve
 ENV PYTHONPATH=/app
 
-# JAX platform configuration
-# By default, JAX will auto-detect and use CUDA if available
-# To force CPU mode (e.g., if GPU is not accessible), set JAX_PLATFORMS=cpu when running the container
-# Example: docker run -e JAX_PLATFORMS=cpu ...
-# ENV JAX_PLATFORMS=cpu  # Uncomment this line to force CPU mode by default
+# JAX picks CUDA automatically; force CPU at runtime with -e JAX_PLATFORMS=cpu
 
-# Safer defaults for OpenCV HighGUI inside Docker/X11:
-# - disable MIT-SHM (often causes "X11 connection broke" in containers)
-# - force XCB backend (more reliable than Wayland/other backends inside containers)
+# OpenCV HighGUI defaults safer for X11-in-Docker: MIT-SHM off, XCB backend.
 ENV QT_X11_NO_MITSHM=1
 ENV QT_QPA_PLATFORM=xcb
-# IMPORTANT: the `opencv-python` wheel bundles its own Qt plugins under site-packages/cv2/qt/plugins.
-# Forcing Qt to use system plugin directories can cause "xcb found but could not load" due to ABI mismatches.
+# point Qt at the plugins shipped inside the opencv-python wheel; pointing it
+# at system plugin dirs causes "xcb found but could not load" ABI mismatches
 ENV QT_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins
 ENV QT_QPA_PLATFORM_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins/platforms
 
-# Checkpoint is provided via bind mount from the host (checkpoints/ directory)
-# No need to download at build time since the workspace is mounted at runtime
+# checkpoints come in via bind mount, no need to download at build time
 
-# ========== Default Runtime Configuration ==========
-# These can be overridden via -e flags when running the container
-
-# Policy server arguments (see scripts/serve_policy.py for options)
-# Default to UR5 environment mode for robot control with local checkpoint
+# default runtime configuration; override with -e flags
 ENV SERVER_ARGS="policy:checkpoint --policy.config=pi05_ur5_blueblock10 --policy.dir=checkpoints/pi05_ur5_blueblock10/pi05_ur5_blueblock10-1/150"
-
-# Seconds to wait for policy server to start before launching robot bridge
 ENV SERVER_WAIT=6
 
-# Robot configuration
+# robot
 ENV UR_IP="192.10.0.11"
 ENV RS_BASE="137322074310"
 ENV RS_WRIST="137322075008"
 
-# Language instruction for the policy (override with -e PROMPT="...")
 ENV PROMPT="Pick up the blue block and place it in the cardboard box"
 
-# Camera exposure (match recording: fixed exposure=100, auto off)
+# camera exposure pinned to match recording (auto off, fixed exposure)
 ENV RS_AUTO_EXPOSURE="0"
 ENV RS_EXPOSURE="100"
 ENV RS_WRIST_EXPOSURE="150"
 
-# Inference settings
+# inference timing and motion
 ENV HOLD_PER_STEP="0.1"
 ENV HORIZON_STEPS="6"
 ENV MAX_STEP_DEG="3.0"
@@ -208,8 +170,8 @@ ENV ACC="0.5"
 ENV LOOKAHEAD="0.1"
 ENV GAIN="300"
 
-# Robot control defaults
 ENV DRY_RUN="0"
 
-# Start policy server in background, wait for it to initialize, then run robot bridge
+# launch the policy server in the background, give it SERVER_WAIT seconds to
+# come up, then start the robot bridge
 CMD ["/bin/bash","-lc","uv run scripts/serve_policy.py $SERVER_ARGS & sleep ${SERVER_WAIT:-6}; python /app/ur5/utils/pi0_bridge_ur5_headless.py"]

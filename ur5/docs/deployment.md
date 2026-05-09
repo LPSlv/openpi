@@ -1,294 +1,132 @@
-# Launch Guide: Running π₀ Policy on UR5 Robot
+# Deployment
 
-This guide explains how to run the π₀ policy on a UR5 robot arm using Docker. The setup uses a single container that runs both the policy server and the robot control bridge.
+Run the pi0 policy server and the UR5 bridge in a single Docker container.
+For end-to-end setup (recording, training, then deploying) see
+[quickstart.md](quickstart.md).
 
 ## Prerequisites
 
-- UR5 robot arm (powered on, Remote Control mode, RTDE script running)
-- RealSense camera connected via USB
-- NVIDIA GPU with Docker support
-- Network access to robot IP
+- UR5e in Remote Control mode, RTDE script running
+- RealSense camera connected via USB 3.0
+- NVIDIA GPU with Docker + nvidia-container-toolkit
+- Network access to the robot
 
-## Step 1: Get Camera Serial Number
+## 1. Get camera serials
 
-First, ensure the main project environment is set up with `uv`:
-
-```bash
-cd /home/ims/openpi
-GIT_LFS_SKIP_SMUDGE=1 uv sync
-GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
-```
-
-Activate the virtual environment:
-
-```bash
-source .venv/bin/activate
-```
-
-Install additional hardware-specific packages for camera and robot testing:
-
-```bash
-uv pip install pyrealsense2 ur-rtde numpy opencv-python
-```
-
-Then list connected cameras:
+From the repo root, in the venv:
 
 ```bash
 python ur5/test/rs_list.py
 ```
 
-Note the serial number for `RS_BASE`.
+Note the serial(s) for `RS_BASE` (over-the-shoulder) and optionally
+`RS_WRIST`. See also [`ur5/test/README.md`](../test/README.md).
 
-**Note:** You can deactivate the venv after getting the serial number:
+## 2. Build the image
+
 ```bash
-deactivate
+docker build -t openpi_robot -f ur5/docker/serve_policy_robot.Dockerfile .
 ```
 
-## Step 2: Build Docker Image
+## 3. Allow X11 in for the camera preview (optional)
+
+Run these on the host once per login session if you want `cv2.imshow` to work
+inside the container:
 
 ```bash
-cd /home/ims/openpi
-```
-
-## Step 3: Run Container
-
-Detect video devices:
-
-```bash
-RUN_DEVICES="$(for d in /dev/video*; do [ -e "$d" ] && printf -- '--device=%s ' "$d"; done)"
-```
-
-Remove existing container:
-
-```bash
-docker rm -f openpi-robot 2>/dev/null || true
-```
-
-Run container (override RS_BASE with your camera serial):
-
-**For display (to see camera feeds live):**
-
-First, run these **host** commands (once per terminal session) so the OpenCV preview window can open from inside Docker:
-```bash
-# If DISPLAY is empty, you won't get a window. On a local desktop session this is usually :0.
-echo "DISPLAY=$DISPLAY"
 export DISPLAY=${DISPLAY:-:0}
-
-# Optional sanity check (should not error)
-xdpyinfo -display "$DISPLAY" >/dev/null && echo "X11 OK on $DISPLAY"
-
-# Allow local Docker containers to connect to your X server
 xhost +local:docker
-
-# Often needed because the container runs as root
-xhost +SI:localuser:root
+xhost +SI:localuser:root   # the container runs as root
 ```
 
-Then run the container:
-```bash
-docker run --rm -it \
-  --gpus=all \
-  --network=host \
-  --ipc=host \
-  --device=/dev/bus/usb:/dev/bus/usb \
-  $RUN_DEVICES \
-  --group-add video \
-  -v "$PWD":/app \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
-  -e DISPLAY=$DISPLAY \
-  -e QT_X11_NO_MITSHM=1 \
-  -e QT_QPA_PLATFORM=xcb \
-  -e QT_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins \
-  -e QT_QPA_PLATFORM_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins/platforms \
-  --name openpi-robot \
-  -e RS_BASE=137322074310 \
-  -e RS_WRIST=137322075008 \
-  -e PROMPT="Pick up the blue block and place it in the cardboard box" \
-  -e HOLD_PER_STEP=0.1 \
-  -e HORIZON_STEPS=15 \
-  -e MAX_STEP_DEG=3.0 \
-  -e DT=0.02 \
-  -e VEL=0.5 \
-  -e ACC=0.5 \
-  -e LOOKAHEAD=0.1 \
-  -e GAIN=300 \
-  openpi_robot
+Skip this section if you're running headless (set `SHOW_IMAGES=0` below).
 
-
-  docker run --rm -it \
-  --gpus=all \
-  --network=host \
-  --ipc=host \
-  --device=/dev/bus/usb:/dev/bus/usb \
-  $RUN_DEVICES \
-  --group-add video \
-  -v "$PWD":/app \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
-  -e DISPLAY=$DISPLAY \
-  -e QT_X11_NO_MITSHM=1 \
-  -e QT_QPA_PLATFORM=xcb \
-  -e QT_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins \
-  -e QT_QPA_PLATFORM_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugins/platforms \
-  --name openpi-robot \
-  -e RS_BASE=137322074310 \
-  -e RS_WRIST=137322075008 \
-  -e PROMPT="pick up the blue block and place it in the cardboard box" \
-  -e INFER_PERIOD=0.4 \
-  -e HORIZON_STEPS=8 \
-  -e MAX_STEP_DEG=3.0 \
-  -e DT=0.05 \
-  -e VEL=0.08 \
-  -e ACC=0.15 \
-  -e LOOKAHEAD=0.15 \
-  -e GAIN=200 \
-  openpi_robot
-```
-
-**Tuning notes (UR5 smoothness + “short” motions):**
-- **Chunk duration**: The bridge executes `HORIZON_STEPS` actions, holding each for `HOLD_PER_STEP` seconds. Total time per policy call is approximately \(HORIZON\_STEPS \times HOLD\_PER\_STEP\).
-  - If you set **`INFER_PERIOD`** and do **not** set `HOLD_PER_STEP`, the bridge will derive `HOLD_PER_STEP = INFER_PERIOD / HORIZON_STEPS`.
-- **Motion distance (“very short”)**: In default `ACTION_MODE=delta`, each step delta is clamped per-joint by **`MAX_STEP_DEG`**. If `MAX_STEP_DEG` is too small (e.g. `0.5`), motion will look tiny even if the policy is trying to move.
-- **Jagged motion**: Usually improves by increasing chunk duration (larger `INFER_PERIOD` / `HOLD_PER_STEP`), using a less aggressive `GAIN`, and avoiding very small `DT` unless you’ve tuned `LOOKAHEAD/GAIN` for it.
-
-docker run --rm -it \
-  --gpus=all \
-  --network=host \
-  --ipc=host \
-  --device=/dev/bus/usb:/dev/bus/usb \
-  $RUN_DEVICES \
-  --group-add video \
-  -v "$PWD":/app \
-  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
-  -e DISPLAY=$DISPLAY \
-  -e QT_X11_NO_MITSHM=1 \
-  --name openpi-robot \
-  -e RS_BASE=137322074310 \
-  -e RS_WRIST=137322075008 \
-  -e PROMPT="bus the table" \
-  -e INFER_PERIOD=0.6 \
-  -e HORIZON_STEPS=8 \
-  -e HOLD_PER_STEP=0.05 \
-  -e MAX_STEP_DEG=0.10 \
-  -e DT=0.05 \
-  -e VEL=0.05 \
-  -e ACC=0.10 \
-  -e LOOKAHEAD=0.10 \
-  -e GAIN=200 \
-  openpi_robot
-
-
-**To enable norm_stats verification** (helps diagnose large action values), add:
-```bash
-  -e VERIFY_NORM_STATS=1 \
-```
-
-**Without display (headless mode):**
-```bash
-docker run --rm -it \
-  --gpus=all \
-  --network=host \
-  --device=/dev/bus/usb:/dev/bus/usb \
-  $RUN_DEVICES \
-  --group-add video \
-  -v "$PWD":/app \
-  --name openpi-robot \
-  -e RS_BASE=137322074310 \
-  -e RS_WRIST=137322075008 \
-  -e PROMPT="pick up the bottle with orange cap" \
-  -e INFER_PERIOD=0.15 \
-  -e HORIZON_STEPS=1 \
-  -e HOLD_PER_STEP=0.15 \
-  -e SHOW_IMAGES=0 \
-  -e VERIFY_NORM_STATS=1 \
-  openpi_robot
-```
-
-**Camera configuration:**
-- `RS_BASE`: Serial number for the over-the-shoulder (exterior) camera (required)
-- `RS_WRIST`: Serial number for the wrist-mounted camera (optional, if not set, base camera will be used for both views)
-
-**Display options:**
-- `SHOW_IMAGES=1` (default): Show live camera feeds in a window. Requires X11 forwarding (see above).
-- `SHOW_IMAGES=0`: Disable display (useful for headless operation).
-
-**If the camera window does not show up (common causes):**
-- **X11 not permitted**: you must run `xhost +local:docker` on the host *in the same login session* before starting the container.
-  - If it still fails, the container often runs as `root`, so allow root explicitly: `xhost +SI:localuser:root`
-- **No GUI / SSH session**: if you’re SSH’d into the machine without X forwarding, there is no local X server for `cv2.imshow`. Either enable X forwarding (slower) or run headless with `-e SHOW_IMAGES=0`.
-- **Wayland**: ensure XWayland is available and `$DISPLAY` is set (try `echo $DISPLAY` on the host). If needed, force an X11 display like `-e DISPLAY=:0`.
-- **Headless OpenCV inside the container**: if you see `WARNING: OpenCV compiled without GUI support (no GTK/QT)`, your container is importing a headless OpenCV build. Rebuild the image after updating `ur5/docker/serve_policy_robot.Dockerfile` (it now removes `opencv-python-headless`).
-- **Check container warnings**: the UR5 bridge prints warnings like “DISPLAY not set”, “OpenCV compiled without GUI support”, or “X11 connection test failed” to stderr at startup.
-
-**Enabling X11 Access:**
-
-1. **One-time per terminal session:**
-   ```bash
-   xhost +local:docker
-   ```
-
-2. **Make it permanent (add to `~/.bashrc`):**
-   ```bash
-   echo 'xhost +local:docker > /dev/null 2>&1' >> ~/.bashrc
-   source ~/.bashrc
-   ```
-
-3. **Verify X11 is working:**
-   ```bash
-   echo $DISPLAY  # Should show something like :0 or :1
-   ```
-
-**Note:** `xhost +local:docker` allows all local Docker containers to access your X server. For more security, you can use `xhost +SI:localuser:$(whoami)` instead, but this may require additional configuration.
-
-Optional: Override other defaults (UR_IP, PROMPT, etc.) with additional `-e` flags.
-
-## Example Launch Script
-
-Save as `launch_robot.sh`:
+## 4. Run the container
 
 ```bash
-#!/bin/bash
-cd /home/ims/openpi
-
-docker build -t openpi_robot -f ur5/docker/serve_policy_robot.Dockerfile .
+docker rm -f openpi-robot 2>/dev/null || true
 
 RUN_DEVICES="$(for d in /dev/video*; do [ -e "$d" ] && printf -- '--device=%s ' "$d"; done)"
 
-docker rm -f openpi-robot 2>/dev/null || true
-
-
+docker run --rm -it \
+  --gpus=all \
+  --network=host \
+  --ipc=host \
+  --device=/dev/bus/usb:/dev/bus/usb \
+  $RUN_DEVICES \
+  --group-add video \
+  -v "$PWD":/app \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  -e DISPLAY=$DISPLAY \
+  --name openpi-robot \
+  -e RS_BASE=<base_serial> \
+  -e RS_WRIST=<wrist_serial> \
+  -e PROMPT="pick up the blue block and place it in the cardboard box" \
+  openpi_robot
 ```
 
-Run with: `chmod +x launch_robot.sh && ./launch_robot.sh`
+Drop the `-v /tmp/.X11-unix...` and `-e DISPLAY=...` lines plus add
+`-e SHOW_IMAGES=0` for headless operation.
 
-## Building the Docker Image
+The container starts the policy server, waits `SERVER_WAIT` seconds, then
+launches the bridge. The bridge connects to the robot and the cameras and
+starts driving.
 
-```bash
-docker build -t openpi_robot -f ur5/docker/serve_policy_robot.Dockerfile .
-```
+## Tuning the motion
 
-## Environment Variable Reference
+The bridge plays `HORIZON_STEPS` actions back-to-back, holding each for
+`HOLD_PER_STEP` seconds, so each policy call covers roughly
+`HORIZON_STEPS * HOLD_PER_STEP` seconds of wall-clock time.
+
+- if you set `INFER_PERIOD` and leave `HOLD_PER_STEP` unset, the bridge
+  derives `HOLD_PER_STEP = INFER_PERIOD / HORIZON_STEPS`
+- with `ACTION_MODE=delta`, each step is clipped per-joint by `MAX_STEP_DEG`;
+  too small a value (e.g. 0.5 deg) makes motion look frozen
+- jagged motion usually improves with longer `INFER_PERIOD`/`HOLD_PER_STEP`,
+  a softer `GAIN`, and not chasing very small `DT` unless `LOOKAHEAD`/`GAIN`
+  are tuned for it
+
+## X11 troubleshooting
+
+The bridge prints warnings to stderr if the preview can't open: "DISPLAY not
+set", "OpenCV compiled without GUI support", "X11 connection test failed".
+
+Common causes:
+
+- **xhost not permitted** — re-run `xhost +local:docker` (and
+  `xhost +SI:localuser:root`) in the same login session
+- **No X server reachable** — happens over plain SSH; either enable X
+  forwarding (slow) or set `-e SHOW_IMAGES=0`
+- **Wayland host** — make sure XWayland is running and `$DISPLAY` is set; if
+  needed force `-e DISPLAY=:0`
+- **Headless OpenCV inside the container** — if you see "OpenCV compiled
+  without GUI support", an opencv-python-headless wheel beat the GUI build
+  to the venv. Rebuild the image; the Dockerfile uninstalls the headless
+  variant before pinning the GUI build.
+
+## Environment variable reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `UR_IP` | `192.10.0.11` | Robot IP address |
-| `RS_BASE` | *(required)* | Base camera serial number |
-| `RS_WRIST` | *(optional)* | Wrist camera serial (if unset, base is used for both views) |
-| `PROMPT` | `"pick up the grey shaker bottle"` | Language instruction for the policy |
-| `INFER_PERIOD` | `0.3` | Seconds between policy calls |
-| `HORIZON_STEPS` | `8` | Number of action steps per policy call |
-| `HOLD_PER_STEP` | *derived* | Seconds to hold each action step (`INFER_PERIOD / HORIZON_STEPS` if unset) |
-| `ACTION_MODE` | `delta` | `"delta"` or `"absolute"` |
-| `DT` | `0.008` | ServoJ time step (seconds) |
-| `VEL` | `0.5` | Joint velocity limit (rad/s) |
-| `ACC` | `0.5` | Joint acceleration limit (rad/s^2) |
-| `LOOKAHEAD` | `0.15` | ServoJ lookahead time (seconds) |
-| `GAIN` | `100` | ServoJ proportional gain |
-| `MAX_STEP_DEG` | `3.0` | Max per-joint step size (degrees) |
-| `VERIFY_NORM_STATS` | `0` | Set to `1` to log normalization stats for debugging |
-| `SHOW_IMAGES` | `1` | Set to `0` for headless mode (no camera preview window) |
-| `ROBOTIQ_PORT` | `63352` | Gripper URCap socket port |
-| `GRIPPER_DEBOUNCE` | `0.1` | Gripper command debounce time (seconds) |
-| `DRY_RUN` | `0` | Set to `1` to skip sending commands to the robot |
-| `FAKE_CAM` | `0` | Set to `1` for synthetic images (no cameras needed) |
-| `SERVER_ARGS` | *(see Dockerfile)* | Arguments passed to the policy server |
-| `SERVER_WAIT` | `6` | Seconds to wait for policy server startup |
+| `UR_IP` | `192.10.0.11` | robot IP address |
+| `RS_BASE` | *(required)* | base camera serial |
+| `RS_WRIST` | *(optional)* | wrist camera serial; falls back to base for both views |
+| `PROMPT` | `"pick up the blue block and place it in the cardboard box"` | language instruction |
+| `INFER_PERIOD` | unset | wall-clock seconds per policy call (derives HOLD_PER_STEP) |
+| `HORIZON_STEPS` | `6` | actions executed per policy call |
+| `HOLD_PER_STEP` | derived | seconds to hold each action step |
+| `ACTION_MODE` | `absolute` | `"absolute"` or `"delta"` |
+| `DT` | `0.02` | servoJ time step (s) |
+| `VEL` | `0.5` | joint velocity limit (rad/s) |
+| `ACC` | `0.5` | joint acceleration limit (rad/s^2) |
+| `LOOKAHEAD` | `0.1` | servoJ lookahead time (s) |
+| `GAIN` | `300` | servoJ proportional gain |
+| `MAX_STEP_DEG` | `3.0` | max per-joint step size (deg), used in delta mode |
+| `SHOW_IMAGES` | `1` | set `0` to disable the camera preview |
+| `ROBOTIQ_PORT` | `63352` | Robotiq URCap socket port |
+| `GRIPPER_DEBOUNCE` | `0.02` | min gripper-command change before resending |
+| `RECORD_DIR` | empty | directory to dump per-step inference recordings |
+| `DRY_RUN` | `0` | set `1` to skip sending commands to the robot |
+| `FAKE_CAM` | `0` | set `1` to bypass cameras with synthetic images |
+| `SERVER_ARGS` | *(see Dockerfile)* | arguments passed to `scripts/serve_policy.py` |
+| `SERVER_WAIT` | `6` | seconds to wait for the policy server before starting the bridge |

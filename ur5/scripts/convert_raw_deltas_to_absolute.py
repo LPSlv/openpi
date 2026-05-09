@@ -39,7 +39,6 @@ def convert_episode(ep_dir: Path, *, dry_run: bool = False) -> int:
     """Convert one episode. Returns number of steps converted."""
     steps_path = ep_dir / "steps.jsonl"
 
-    # Read all steps
     steps: list[dict] = []
     with steps_path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -52,7 +51,7 @@ def convert_episode(ep_dir: Path, *, dry_run: bool = False) -> int:
         print(f"  Skipping {ep_dir.name}: no steps")
         return 0
 
-    # Convert: action[i] = state[i+1], action[N-1] = state[N-1]
+    # forward-looking shift: action[i] = state[i+1], with the last step holding position
     for i in range(len(steps)):
         if i + 1 < len(steps):
             steps[i]["actions"] = steps[i + 1]["state"]
@@ -60,23 +59,21 @@ def convert_episode(ep_dir: Path, *, dry_run: bool = False) -> int:
             steps[i]["actions"] = steps[i]["state"]
 
     if dry_run:
-        # Show a sample
         if len(steps) > 1:
             s0 = steps[0]
             print(f"  Step 0: state={s0['state'][:3]}...  action(new)={s0['actions'][:3]}...")
         return len(steps)
 
-    # Backup original
+    # back up the original before overwriting
     backup_path = ep_dir / "steps.jsonl.bak"
     if not backup_path.exists():
         shutil.copy2(steps_path, backup_path)
 
-    # Write converted steps
     with steps_path.open("w", encoding="utf-8") as f:
         for step in steps:
             f.write(json.dumps(step) + "\n")
 
-    # Update meta.json action_spec
+    # update meta.json so action_spec reflects the new convention
     meta_path = ep_dir / "meta.json"
     meta = json.loads(meta_path.read_text())
     if "action_spec" in meta:

@@ -25,8 +25,7 @@ def download_checkpoint(url: str, cache_dir: pathlib.Path) -> None:
 def main():
     cache_dir = pathlib.Path("/root/.cache/openpi")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    
-    # URLs passed as command-line arguments
+
     for url in sys.argv[1:]:
         if url:
             download_checkpoint(url, cache_dir)

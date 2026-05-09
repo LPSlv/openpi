@@ -10,9 +10,9 @@ import shutil
 from typing import Literal
 
 import h5py
-from lerobot.common.datasets.lerobot_dataset import LEROBOT_HOME
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.common.datasets.push_dataset_to_hub._download_raw import download_raw
+from huggingface_hub import snapshot_download
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.utils.constants import HF_LEROBOT_HOME as LEROBOT_HOME
 import numpy as np
 import torch
 import tqdm
@@ -219,9 +219,10 @@ def populate_dataset(
             if effort is not None:
                 frame["observation.effort"] = effort[i]
 
+            frame["task"] = task
             dataset.add_frame(frame)
 
-        dataset.save_episode(task=task)
+        dataset.save_episode()
 
     return dataset
 
@@ -244,7 +245,7 @@ def port_aloha(
     if not raw_dir.exists():
         if raw_repo_id is None:
             raise ValueError("raw_repo_id must be provided if raw_dir does not exist")
-        download_raw(raw_dir, repo_id=raw_repo_id)
+        snapshot_download(raw_repo_id, repo_type="dataset", local_dir=raw_dir)
 
     hdf5_files = sorted(raw_dir.glob("episode_*.hdf5"))
 
@@ -262,7 +263,7 @@ def port_aloha(
         task=task,
         episodes=episodes,
     )
-    dataset.consolidate()
+    dataset.finalize()
 
     if push_to_hub:
         dataset.push_to_hub()

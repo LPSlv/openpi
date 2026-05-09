@@ -13,7 +13,7 @@ This repo includes simple, standalone scripts to:
 Run:
 
 ```bash
-uv run python local/scripts/ur5_record_freedrive_waypoints.py \
+uv run python ur5/scripts/ur5_record_freedrive_waypoints.py \
   --ur_ip 192.168.1.116 \
   --prompt "do something" \
   --out_dir raw_episodes
@@ -28,13 +28,13 @@ This will create:
 You need two RealSense serials (external + wrist). You can list them with:
 
 ```bash
-uv run python local/test/rs_list.py
+uv run python ur5/test/rs_list.py
 ```
 
 Then run:
 
 ```bash
-uv run python local/scripts/ur5_replay_and_record_raw.py \
+uv run python ur5/scripts/ur5_replay_and_record_raw.py \
   --ur_ip 192.168.1.116 \
   --waypoints_path raw_episodes/<episode_id>/waypoints.json \
   --rs_base_serial <RS_SERIAL_BASE> \
@@ -128,7 +128,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
     """Data pipeline config for training on LeRobot-formatted UR5 datasets."""
 
     # If true, interpret dataset actions as absolute (joint targets) and convert to deltas.
-    # If your dataset already stores delta actions (as in local/scripts/ur5_replay_and_record_raw.py),
+    # If your dataset already stores delta actions (as in ur5/scripts/ur5_replay_and_record_raw.py),
     # leave this as False.
     use_delta_action_transform: bool = False
 
@@ -158,7 +158,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
 
         # Optionally convert absolute actions to delta actions.
         # By convention, we do not convert the gripper action (7th dimension).
-        # Note: The raw recording script (local/scripts/ur5_replay_and_record_raw.py) already records delta actions,
+        # Note: The raw recording script (ur5/scripts/ur5_replay_and_record_raw.py) already records delta actions,
         # so use_delta_action_transform should be False for datasets created with that script.
         if self.use_delta_action_transform:
             delta_action_mask = _transforms.make_bool_mask(6, -1)

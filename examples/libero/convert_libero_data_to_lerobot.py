@@ -20,8 +20,8 @@ Running this conversion script will take approximately 30 minutes.
 
 import shutil
 
-from lerobot.common.datasets.lerobot_dataset import HF_LEROBOT_HOME
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.utils.constants import HF_LEROBOT_HOME
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 import tensorflow_datasets as tfds
 import tyro
 
@@ -89,6 +89,8 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                     }
                 )
             dataset.save_episode()
+
+    dataset.finalize()
 
     # Optionally push to the Hugging Face Hub
     if push_to_hub:

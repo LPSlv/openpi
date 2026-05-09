@@ -35,13 +35,26 @@ class UR5Inputs(transforms.DataTransformFn):
     model_type: _model.ModelType = _model.ModelType.PI0
 
     def __call__(self, data: dict) -> dict:
-        # Support both training format (joints/gripper/base_rgb/wrist_rgb) and
-        # inference format (observation/state/observation/image/observation/wrist_image)
+        # Support three input formats:
+        # 1. Training with separate joints/gripper (your datasets)
+        # 2. Training with combined state (F-Fer datasets: observation.state is 7D)
+        # 3. Inference (observation/state + observation/image + observation/wrist_image)
         if "joints" in data and "gripper" in data:
-            # Training format: concatenate joints and gripper into state vector
+            # Format 1: separate joints (6D) + gripper (1D)
             joints = np.asarray(data["joints"]).reshape(-1)
-            gripper = np.asarray(data["gripper"]).reshape(-1)  # Ensure 1D array
+            gripper = np.asarray(data["gripper"]).reshape(-1)
             state = np.concatenate([joints, gripper])
+            base_image = _parse_image(data["base_rgb"])
+            wrist_image = _parse_image(data["wrist_rgb"])
+        elif "joints" in data and "gripper" not in data:
+            # Format 2: combined state mapped to "joints" key (e.g. F-Fer's observation.state → joints)
+            full = np.asarray(data["joints"]).reshape(-1)
+            if full.shape[0] == 7:
+                state = full
+            elif full.shape[0] == 6:
+                state = np.concatenate([full, np.zeros(1, dtype=full.dtype)])
+            else:
+                raise ValueError(f"Expected joints shape (6,) or (7,), got {full.shape}")
             base_image = _parse_image(data["base_rgb"])
             wrist_image = _parse_image(data["wrist_rgb"])
         elif "observation/state" in data:

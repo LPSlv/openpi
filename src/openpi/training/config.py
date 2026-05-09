@@ -22,6 +22,7 @@ import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
 import openpi.policies.ur5_policy as ur5_policy
 import openpi.shared.download as _download
+import openpi.shared.nnx_utils as nnx_utils
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
 import openpi.training.misc.polaris_config as polaris_config
@@ -90,6 +91,11 @@ class DataConfig:
 
     # If true, will use the LeRobot dataset task to define the prompt.
     prompt_from_task: bool = False
+
+    # ---- Gripper transition oversampling (CUSTOM MODIFICATION) ----
+    # If set, uses WeightedRandomSampler to oversample frames with gripper transitions.
+    # Set to None to disable. To revert: remove this field.
+    gripper_oversample_factor: float | None = None
 
     # Only used for RLDS data loader (ie currently only used for DROID).
     rlds_data_dir: str | None = None
@@ -362,27 +368,49 @@ class LeRobotUR5DataConfig(DataConfigFactory):
 
     # If true, interpret dataset actions as absolute (joint targets) and convert to deltas
     # for training.  During inference the inverse (AbsoluteActions) is applied so the model
-    # outputs absolute joint positions.  The recorder (local/scripts/ur5_replay_and_record_raw.py)
+    # outputs absolute joint positions.  The recorder (ur5/scripts/ur5_replay_and_record_raw.py)
     # stores forward-looking absolute actions: action[i] = state[i+1].
     use_delta_action_transform: bool = True
 
+    gripper_oversample_factor: float | None = None
+
+    # Raw HF column name for the action sequence. LeRobot expands this into action chunks
+    # BEFORE the repack runs. Must match the actual column name in the dataset.
+    # Your datasets use "actions" (plural); F-Fer's uses "action" (singular).
+    action_key: str = "actions"
+
+    # Override the default repack structure. If None, uses the default mapping
+    # for your own datasets (image/wrist_image/joints/gripper/actions/prompt).
+    # Set this when training on datasets with different column names (e.g. F-Fer's
+    # observation.state / observation.images.* / action layout).
+    repack_structure: dict[str, str] | None = dataclasses.field(default=None, hash=False, compare=False)
+
+    # Default repack: maps YOUR dataset columns to UR5Inputs training format.
+    _DEFAULT_REPACK = {
+        "base_rgb": "image",
+        "wrist_rgb": "wrist_image",
+        "joints": "joints",
+        "gripper": "gripper",
+        "actions": "actions",
+        "prompt": "prompt",
+    }
+
+    # F-Fer's dataset columns → UR5Inputs training format.
+    # observation.state (7D) is mapped to "joints"; UR5Inputs Format 2 handles the split.
+    FFER_REPACK = {
+        "joints": "observation.state",
+        "base_rgb": "observation.images.zed2i_left",
+        "wrist_rgb": "observation.images.zedm_left",
+        "actions": "action",
+        "prompt": "prompt",
+    }
+
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        # Boilerplate for remapping keys from the LeRobot dataset.
-        # When prompt_from_task=True, LeRobot automatically converts "task" strings to task_index,
-        # and PromptFromLeRobotTask creates "prompt" from task_index, so we just pass "prompt" through.
+        structure = self.repack_structure if self.repack_structure is not None else self._DEFAULT_REPACK
         repack_transform = _transforms.Group(
             inputs=[
-                _transforms.RepackTransform(
-                    {
-                        "base_rgb": "image",
-                        "wrist_rgb": "wrist_image",
-                        "joints": "joints",
-                        "gripper": "gripper",
-                        "actions": "actions",
-                        "prompt": "prompt",  # PromptFromLeRobotTask creates this from task_index
-                    }
-                )
+                _transforms.RepackTransform(structure)
             ]
         )
 
@@ -405,12 +433,19 @@ class LeRobotUR5DataConfig(DataConfigFactory):
         # You do not need to change anything here for your own dataset.
         model_transforms = ModelTransformFactory()(model_config)
 
-        # We return all data transforms for training and inference. No need to change anything here.
+        # For pi0/pi05: override use_quantile_norm=False (z-score is more stable on small datasets).
+        # For pi0_fast: MUST keep quantile normalization — FAST tokenizer discretizes state into
+        # 256 bins in [-1, 1] range, which requires quantile-normalized inputs.
+        # See: https://github.com/Physical-Intelligence/openpi/issues/763
+        use_quantile = model_config.model_type == ModelType.PI0_FAST
         return dataclasses.replace(
             self.create_base_config(assets_dirs, model_config),
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
+            use_quantile_norm=use_quantile,
+            gripper_oversample_factor=self.gripper_oversample_factor,
+            action_sequence_keys=(self.action_key,),
         )
 
 
@@ -576,6 +611,11 @@ class TrainConfig:
     # If set, any existing checkpoints matching step % keep_period == 0 will not be deleted.
     keep_period: int | None = 5000
 
+    # Early stopping: stop when smoothed loss stops decreasing.
+    # Set early_stop_patience=0 to disable (default: disabled).
+    early_stop_patience: int = 10  # Number of log_intervals without improvement before stopping. 0 = disabled.
+    early_stop_min_delta: float = 1e-4  # Minimum loss decrease to count as improvement.
+
     # If true, will overwrite the checkpoint directory if it already exists.
     overwrite: bool = False
     # If true, will resume training from the last checkpoint.
@@ -701,19 +741,74 @@ _CONFIGS = [
     ),
     TrainConfig(
         name="pi05_ur5",
+        # Mixed 51-episode dataset (non-smooth — raw binary gripper transitions).
+        # Otherwise same recipe as og_smooth-3 (the experiment that worked).
+        # Computes fresh norm stats on this dataset (does NOT reuse pretrained ur5e stats).
         model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_busthetable_6",
-            assets=AssetsConfig(
-                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
-                asset_id="ur5e",
-            ),
+            repo_id="LPSlvlv/ur5_mixed_51",
+            assets=AssetsConfig(asset_id="LPSlvlv/ur5_mixed_51"),
             base_config=DataConfig(
                 prompt_from_task=True,
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        num_train_steps=400,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=30000),
+        batch_size=16,
+        num_train_steps=200,
+        early_stop_patience=10,
+        early_stop_min_delta=1e-4,
+        log_interval=10,
+        save_interval=30,
+        keep_period=500,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+    TrainConfig(
+        name="pi05_ur5_lora",
+        # LoRA fine-tuning on 40 episodes. LoRA constrains weight updates to low-rank
+        # subspaces, preventing image memorization that killed full fine-tuning.
+        # 2000 steps = ~1 epoch on 29966 frames with batch=16.
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            max_token_len=180,
+            action_dim=32,
+            action_horizon=15,
+        ),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_blueblock_box_v2_40_smooth",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=30000),
+        batch_size=16,
+        num_train_steps=1500,
+        early_stop_patience=100,
+        early_stop_min_delta=1e-4,
+        log_interval=10,
+        save_interval=100,
+        keep_period=100,
+        # Freeze LoRA's frozen params + ALSO freeze SigLIP vision encoder.
+        # SigLIP freezing prevents the vision backbone from adapting to training
+        # images, forcing generalization through pretrained features.
+        freeze_filter=nnx.Any(
+            pi0_config.Pi0Config(
+                pi05=True,
+                discrete_state_input=False,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                action_dim=32,
+                action_horizon=15,
+            ).get_freeze_filter(),
+            nnx_utils.PathRegex(".*img.*"),  # Freeze SigLIP vision encoder
+        ),
+        ema_decay=None,
         policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     #
@@ -725,18 +820,194 @@ _CONFIGS = [
         name="pi0_ur5",
         model=pi0_config.Pi0Config(),
         data=LeRobotUR5DataConfig(
-            repo_id="LPSlvlv/ur5_busthetable_6",
+            repo_id="LPSlvlv/ur5_blueblock_box_v2_40_smooth",
+            gripper_oversample_factor=5.0,
             assets=AssetsConfig(
                 assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
                 asset_id="ur5e",
             ),
             base_config=DataConfig(
-                # Recommended: load prompt from the LeRobot `task` field.
                 prompt_from_task=True,
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        # Short training with frequent saves to find the generalization sweet spot before
+        # image overfitting. og_smooth-3 worked at step 120 — save every 30 to catch it.
+        # Matches og_smooth-3 params: batch_size=16, peak_lr=2.5e-5.
+        batch_size=16,
+        num_train_steps=200,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=200),
+        early_stop_patience=0,
+        log_interval=10,
+        save_interval=30,
+        keep_period=30,  # Keep ALL checkpoints (default max_to_keep=1 deletes old ones)
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+    TrainConfig(
+        name="pi0_ur5_frozen_vision",
+        # Pi0 full fine-tuning with frozen SigLIP vision encoder.
+        # Frozen SigLIP prevents the vision backbone from adapting to training
+        # images, forcing generalization through pretrained features.
+        # Mixed 51-episode dataset (40 blueblock + 11 bus the table).
+        model=pi0_config.Pi0Config(),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_blueblock_box_v2_40_smooth",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        # Freeze SigLIP vision encoder + main Gemma LLM (but NOT the action expert llm_1).
+        # Only the action expert and action projections train.
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),
+            nnx.All(nnx_utils.PathRegex(".*llm.*"), nnx.Not(nnx_utils.PathRegex(".*llm.*_1.*"))),
+        ),
+        batch_size=16,
+        num_train_steps=2000,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=30000),
+        early_stop_patience=100,
+        early_stop_min_delta=1e-4,
+        log_interval=10,
+        save_interval=100,
+        keep_period=100,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+    # Train on F-Fer's ur-tasks-merged dataset (800 episodes, 1.18M frames, 60 Hz, 4 tasks).
+    # No freezing, no oversampling — vanilla full fine-tune from pi0_base.
+    # Repack maps F-Fer's column names to our UR5Inputs format:
+    #   observation.state (7D) → joints (UR5Inputs handles 7D via Format 2)
+    #   observation.images.zed2i_left → base_rgb
+    #   observation.images.zedm_left → wrist_rgb
+    #   action → actions
+    # Norm stats must be computed first:
+    #   uv run scripts/compute_norm_stats.py --config-name pi0_ur5_ffer_merged
+    TrainConfig(
+        name="pi0_ur5_ffer_merged",
+        model=pi0_config.Pi0Config(action_horizon=30),
+        data=LeRobotUR5DataConfig(
+            repo_id="F-Fer/ur-tasks-merged",
+            use_delta_action_transform=True,
+            action_key="action",
+            repack_structure=LeRobotUR5DataConfig.FFER_REPACK,
+            assets=AssetsConfig(asset_id="F-Fer/ur-tasks-merged"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        batch_size=16,
+        num_train_steps=10000,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=100, peak_lr=2.5e-5, decay_steps=10000),
+        early_stop_patience=0,
+        log_interval=50,
+        save_interval=2000,
+        keep_period=2000,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+    # Replicate og_smooth-3 recipe (the only experiment that worked on the real robot)
+    # on the same og_smooth dataset, but 300 steps max and save every 30 steps.
+    TrainConfig(
+        name="pi05_ur5_og_smooth_short",
+        model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_blueblock_box_og_smooth",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=30000),
+        batch_size=16,
+        num_train_steps=300,
+        early_stop_patience=0,
+        early_stop_min_delta=1e-4,
+        log_interval=10,
+        save_interval=30,
+        keep_period=30,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+    # Stage 2: fine-tune the F-Fer checkpoint on our own data.
+    # Uses og_smooth-3 recipe (the one that worked). 300 steps, save every 30.
+    # Dataset: ur5_mixed_51 (51 episodes, NO smoothing — raw binary gripper).
+    # Avoids the broken ramp direction bug in the smooth datasets.
+    TrainConfig(
+        name="pi0_ur5_ffer_then_mine",
+        model=pi0_config.Pi0Config(action_horizon=30),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_blueblock_box_10",
+            assets=AssetsConfig(asset_id="LPSlvlv/ur5_blueblock_box_10"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "checkpoints/pi0_ur5_ffer_merged/pi0_ur5_ffer_merged-1/2000/params"
+        ),
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=30000),
+        batch_size=16,
+        num_train_steps=300,
+        early_stop_patience=0,
+        log_interval=10,
+        save_interval=100,
+        keep_period=100,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+    # Replicate og_smooth-3 recipe (the only experiment that worked on the real robot)
+    # but with ur5_blueblock_box_10 dataset. Reloads pretrained ur5e norm stats.
+    # Pi0.5, full fine-tune from pi05_base, 500 steps, early_stop_patience=20.
+    TrainConfig(
+        name="pi05_ur5_blueblock10",
+        model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_blueblock_box_10",
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=30000),
+        batch_size=16,
         num_train_steps=500,
+        early_stop_patience=20,
+        early_stop_min_delta=1e-4,
+        log_interval=10,
+        save_interval=30,
+        keep_period=30,
+        policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
+    ),
+    # Pi0 FAST for UR5: discrete action tokens instead of continuous flow matching.
+    # FAST uses cross-entropy loss on tokens, which may handle rare events (gripper transitions)
+    # better than MSE regression. Based on pi0_fast_libero config (also 7-DOF).
+    TrainConfig(
+        name="pi0_fast_ur5",
+        model=pi0_fast.Pi0FASTConfig(
+            action_dim=7,
+            action_horizon=10,
+            max_token_len=180,
+        ),
+        data=LeRobotUR5DataConfig(
+            repo_id="LPSlvlv/ur5_blueblock_box_v2_40",
+            assets=AssetsConfig(asset_id="ur5e"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_fast_base/params"),
+        num_train_steps=5000,
+        log_interval=50,
         policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     TrainConfig(

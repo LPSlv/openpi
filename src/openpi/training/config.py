@@ -364,26 +364,23 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
 class LeRobotUR5DataConfig(DataConfigFactory):
     """Data pipeline config for training on LeRobot-formatted UR5 datasets."""
 
-    # If true, interpret dataset actions as absolute (joint targets) and convert to deltas
-    # for training.  During inference the inverse (AbsoluteActions) is applied so the model
-    # outputs absolute joint positions.  The recorder (ur5/scripts/ur5_replay_and_record_raw.py)
-    # stores forward-looking absolute actions: action[i] = state[i+1].
+    # treat dataset actions as absolute joint targets and convert to deltas for
+    # training; the inverse runs at inference so the model output is absolute again.
+    # the recorder (ur5/scripts/ur5_replay_and_record_raw.py) stores forward-looking
+    # absolute actions, action[i] = state[i+1]
     use_delta_action_transform: bool = True
 
     gripper_oversample_factor: float | None = None
 
-    # Raw HF column name for the action sequence. LeRobot expands this into action chunks
-    # BEFORE the repack runs. Must match the actual column name in the dataset.
-    # Your datasets use "actions" (plural); F-Fer's uses "action" (singular).
+    # raw HF column name LeRobot expands into action chunks before the repack runs.
+    # our datasets use "actions" (plural), F-Fer's uses "action" (singular)
     action_key: str = "actions"
 
-    # Override the default repack structure. If None, uses the default mapping
-    # for your own datasets (image/wrist_image/joints/gripper/actions/prompt).
-    # Set this when training on datasets with different column names (e.g. F-Fer's
-    # observation.state / observation.images.* / action layout).
+    # override the default repack mapping; None uses _DEFAULT_REPACK below.
+    # set this when training on a dataset with different column names (e.g. F-Fer)
     repack_structure: dict[str, str] | None = dataclasses.field(default=None, hash=False, compare=False)
 
-    # Default repack: maps YOUR dataset columns to UR5Inputs training format.
+    # default mapping from our dataset columns to the UR5Inputs training format
     _DEFAULT_REPACK: ClassVar[dict[str, str]] = {
         "base_rgb": "image",
         "wrist_rgb": "wrist_image",
@@ -393,8 +390,8 @@ class LeRobotUR5DataConfig(DataConfigFactory):
         "prompt": "prompt",
     }
 
-    # F-Fer's dataset columns → UR5Inputs training format.
-    # observation.state (7D) is mapped to "joints"; UR5Inputs Format 2 handles the split.
+    # F-Fer's columns: observation.state is 7D and maps to "joints"; UR5Inputs's
+    # second input format handles the joint/gripper split internally
     FFER_REPACK: ClassVar[dict[str, str]] = {
         "joints": "observation.state",
         "base_rgb": "observation.images.zed2i_left",
@@ -408,14 +405,13 @@ class LeRobotUR5DataConfig(DataConfigFactory):
         structure = self.repack_structure if self.repack_structure is not None else self._DEFAULT_REPACK
         repack_transform = _transforms.Group(inputs=[_transforms.RepackTransform(structure)])
 
-        # These transforms are the ones we wrote earlier.
+        # the UR5Inputs/UR5Outputs transforms live in src/openpi/policies/ur5_policy.py
         data_transforms = _transforms.Group(
             inputs=[ur5_policy.UR5Inputs(model_type=model_config.model_type)],
             outputs=[ur5_policy.UR5Outputs()],
         )
 
-        # Optionally convert absolute actions to delta actions.
-        # By convention, we do not convert the gripper action (7th dimension).
+        # convert absolute actions to deltas for training; the gripper (dim 6) stays absolute
         if self.use_delta_action_transform:
             delta_action_mask = _transforms.make_bool_mask(6, -1)
             data_transforms = data_transforms.push(
@@ -423,14 +419,12 @@ class LeRobotUR5DataConfig(DataConfigFactory):
                 outputs=[_transforms.AbsoluteActions(delta_action_mask)],
             )
 
-        # Model transforms include things like tokenizing the prompt and action targets
-        # You do not need to change anything here for your own dataset.
+        # model transforms tokenize the prompt and action targets, no UR5-specific bits here
         model_transforms = ModelTransformFactory()(model_config)
 
-        # For pi0/pi05: override use_quantile_norm=False (z-score is more stable on small datasets).
-        # For pi0_fast: MUST keep quantile normalization — FAST tokenizer discretizes state into
-        # 256 bins in [-1, 1] range, which requires quantile-normalized inputs.
-        # See: https://github.com/Physical-Intelligence/openpi/issues/763
+        # pi0/pi05 use z-score (more stable on small datasets); pi0_fast must keep
+        # quantile normalization because the FAST tokenizer expects inputs in [-1, 1]
+        # binned into 256 buckets. see https://github.com/Physical-Intelligence/openpi/issues/763
         use_quantile = model_config.model_type == ModelType.PI0_FAST
         return dataclasses.replace(
             self.create_base_config(assets_dirs, model_config),
@@ -735,9 +729,9 @@ _CONFIGS = [
     ),
     TrainConfig(
         name="pi05_ur5",
-        # Mixed 51-episode dataset (non-smooth — raw binary gripper transitions).
-        # Otherwise same recipe as og_smooth-3 (the experiment that worked).
-        # Computes fresh norm stats on this dataset (does NOT reuse pretrained ur5e stats).
+        # 51-episode mixed dataset, raw binary gripper (no smoothing). same recipe
+        # as the og_smooth-3 run that worked, but computes fresh norm stats on
+        # this dataset rather than reusing the pretrained ur5e stats
         model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
         data=LeRobotUR5DataConfig(
             repo_id="LPSlvlv/ur5_mixed_51",
@@ -759,9 +753,9 @@ _CONFIGS = [
     ),
     TrainConfig(
         name="pi05_ur5_lora",
-        # LoRA fine-tuning on 40 episodes. LoRA constrains weight updates to low-rank
-        # subspaces, preventing image memorization that killed full fine-tuning.
-        # 2000 steps = ~1 epoch on 29966 frames with batch=16.
+        # LoRA fine-tune on 40 episodes. low-rank updates constrain how far the
+        # weights can move, which avoided the image memorization that broke
+        # full fine-tuning. 2000 steps is roughly one epoch on 29966 frames at batch=16
         model=pi0_config.Pi0Config(
             pi05=True,
             discrete_state_input=False,
@@ -788,9 +782,8 @@ _CONFIGS = [
         log_interval=10,
         save_interval=100,
         keep_period=100,
-        # Freeze LoRA's frozen params + ALSO freeze SigLIP vision encoder.
-        # SigLIP freezing prevents the vision backbone from adapting to training
-        # images, forcing generalization through pretrained features.
+        # freeze the LoRA-frozen params and also pin SigLIP, so the vision backbone
+        # can't drift onto training images and we keep the pretrained features
         freeze_filter=nnx.Any(
             pi0_config.Pi0Config(
                 pi05=True,
@@ -800,16 +793,16 @@ _CONFIGS = [
                 action_dim=32,
                 action_horizon=15,
             ).get_freeze_filter(),
-            nnx_utils.PathRegex(".*img.*"),  # Freeze SigLIP vision encoder
+            nnx_utils.PathRegex(".*img.*"),  # SigLIP vision encoder
         ),
         ema_decay=None,
         policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
     #
-    # Fine-tuning UR5 configs.
+    # UR5 fine-tuning configs
     #
-    # Guide-aligned example (see `examples/ur5/README.md`):
-    # Fine-tune pi0 on your UR5 LeRobot dataset, reusing the pretrained UR5e norm stats from the pi0 base checkpoint.
+    # follows the guide in examples/ur5/README.md: fine-tune pi0 on a UR5 LeRobot
+    # dataset and reuse the pretrained ur5e norm stats from the pi0 base checkpoint
     TrainConfig(
         name="pi0_ur5",
         model=pi0_config.Pi0Config(),
@@ -825,21 +818,20 @@ _CONFIGS = [
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
-        # Short training with frequent saves to find the generalization sweet spot before
-        # image overfitting. og_smooth-3 worked at step 120 — save every 30 to catch it.
-        # Matches og_smooth-3 params: batch_size=16, peak_lr=2.5e-5.
+        # short training with frequent saves so we can pick out a checkpoint that
+        # generalizes before image overfitting kicks in; og_smooth-3 worked at
+        # step 120, hence save_interval=30. matches og_smooth-3 params otherwise
         batch_size=16,
         num_train_steps=200,
         lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=200),
         early_stop_patience=0,
         log_interval=10,
         save_interval=30,
-        keep_period=30,  # Keep ALL checkpoints (default max_to_keep=1 deletes old ones)
+        keep_period=30,  # keep them all, default max_to_keep=1 would prune older ones
         policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
-    # Replicate og_smooth-3 recipe (the only experiment that worked on the real robot)
-    # but with ur5_blueblock_box_10 dataset. Reloads pretrained ur5e norm stats.
-    # Pi0.5, full fine-tune from pi05_base, 500 steps, early_stop_patience=20.
+    # og_smooth-3 recipe applied to ur5_blueblock_box_10. pi0.5 full fine-tune from
+    # pi05_base, 500 steps with early_stop_patience=20, reusing the pretrained ur5e norm stats
     TrainConfig(
         name="pi05_ur5_blueblock10",
         model=pi0_config.Pi0Config(action_horizon=15, pi05=True, max_token_len=180),
@@ -864,9 +856,9 @@ _CONFIGS = [
         keep_period=30,
         policy_metadata={"reset_pose": [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]},
     ),
-    # Pi0 FAST for UR5: discrete action tokens instead of continuous flow matching.
-    # FAST uses cross-entropy loss on tokens, which may handle rare events (gripper transitions)
-    # better than MSE regression. Based on pi0_fast_libero config (also 7-DOF).
+    # pi0 FAST on UR5 uses discrete action tokens with cross-entropy loss instead of
+    # continuous flow matching, which handles rare events (gripper transitions) better
+    # than MSE regression. structure follows pi0_fast_libero (also a 7-DOF config)
     TrainConfig(
         name="pi0_fast_ur5",
         model=pi0_fast.Pi0FASTConfig(

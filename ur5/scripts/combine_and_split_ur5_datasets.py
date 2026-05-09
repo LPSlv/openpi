@@ -34,7 +34,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 
 # ---------------------------------------------------------------------------
-# Helpers (reused from convert_ur5_raw_to_lerobot.py)
+# helpers, also live in convert_ur5_raw_to_lerobot.py
 # ---------------------------------------------------------------------------
 
 def _imread_rgb(path: Path) -> np.ndarray:
@@ -147,11 +147,11 @@ def _downsample_steps(steps: list[dict], source_fps: float, target_fps: float) -
     result = []
     for i, orig_idx in enumerate(kept_indices):
         step = copy.deepcopy(steps[orig_idx])
-        # Fix forward-looking action: action[k] = state[next_kept]
+        # rewire the forward-looking action to the next kept frame
         if i + 1 < len(kept_indices):
             next_idx = kept_indices[i + 1]
             step["actions"] = steps[next_idx]["state"]
-        # Last step: keep original action (hold position)
+        # the last kept step keeps its original action (hold position)
         result.append(step)
     return result
 
@@ -206,8 +206,8 @@ def _create_dataset(
             )
             total_frames += 1
 
-        # Workaround: LeRobot maps shape (1,) features to HF Value (scalar),
-        # but validation stores (1,) numpy arrays. Squeeze to scalars before save.
+        # lerobot maps shape (1,) features to a HF Value (scalar) but validation
+        # writes them back as (1,) numpy arrays, so we squeeze before save
         for key, ft in FEATURES.items():
             if ft.get("shape") == (1,) and key in dataset.episode_buffer:
                 for j in range(len(dataset.episode_buffer[key])):
@@ -251,7 +251,6 @@ def main(args: Args) -> None:
     if not episodes:
         raise RuntimeError("No episodes found")
 
-    # Validate
     for ep in episodes:
         if "absolute" not in ep.action_desc:
             raise ValueError(
@@ -259,7 +258,6 @@ def main(args: Args) -> None:
                 f"Run convert_raw_deltas_to_absolute.py first."
             )
 
-    # Shuffle deterministically
     rng = random.Random(args.seed)
     rng.shuffle(episodes)
 
@@ -267,11 +265,10 @@ def main(args: Args) -> None:
     if max_split > len(episodes):
         raise ValueError(f"Requested {max_split} episodes but only found {len(episodes)}")
 
-    # Print manifest
     print(f"Discovered {len(episodes)} episodes (seed={args.seed} shuffle):\n")
     for i, ep in enumerate(episodes):
         fps_tag = f"{int(ep.fps)}Hz"
-        ds_tag = f"→{args.target_fps}Hz" if ep.fps != args.target_fps else ""
+        ds_tag = f"->{args.target_fps}Hz" if ep.fps != args.target_fps else ""
         est_frames = ep.num_steps // int(round(ep.fps / args.target_fps)) if ep.fps != args.target_fps else ep.num_steps
         print(f"  {i:2d}: {ep.path.parent.name}/{ep.path.name}  ({fps_tag}{ds_tag}, {est_frames} frames)")
 
@@ -286,10 +283,10 @@ def main(args: Args) -> None:
         print(f"  {repo_id}  ({count} episodes, ~{total_est} frames)")
 
     if args.dry_run:
-        print("\nDRY RUN — no datasets created.")
+        print("\nDRY RUN, no datasets created.")
         return
 
-    # Create datasets (smallest first for quick validation)
+    # build the smallest split first so we catch errors before the long ones
     print()
     for count in sorted(args.splits):
         subset = episodes[:count]

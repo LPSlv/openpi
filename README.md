@@ -52,12 +52,11 @@
 
 ### 4. Training configs — `src/openpi/training/config.py` (modified)
 
-Adds `LeRobotUR5DataConfig` plus a family of UR5 training configs:
-`pi0_ur5`, `pi05_ur5`, `pi05_ur5_blueblock10`, `pi0_ur5_ffer_merged`,
-`pi0_ur5_ffer_then_mine`, `pi0_ur5_frozen_vision`, etc. See the file for the full list.
+Adds `LeRobotUR5DataConfig` plus the UR5 training configs:
+`pi0_ur5`, `pi05_ur5`, `pi05_ur5_lora`, `pi05_ur5_blueblock10`, `pi0_fast_ur5`.
 
-Key knobs added: dataset repack mappings (`_DEFAULT_REPACK`, `FFER_REPACK`),
-`use_delta_action_transform`, gripper oversampling, dataset asset-id overrides.
+Key knobs added: `use_delta_action_transform`, `gripper_oversample_factor`,
+dataset asset-id overrides.
 
 ### 5. Core model & training adaptations — `src/openpi/`
 

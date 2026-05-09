@@ -4,7 +4,7 @@ set -euo pipefail
 # Usage:
 #   PROJECT_ROOT=/gpfs/space/projects/<myproject>/openpi_hpc \
 #   DOCKER_TAR=/gpfs/space/projects/<myproject>/openpi_hpc/containers/openpi_train.tar \
-#     local/scripts/hpc/build_sif_from_docker_archive.sh
+#     ur5/scripts/hpc/build_sif_from_docker_archive.sh
 
 if [[ -z "${PROJECT_ROOT:-}" || -z "${DOCKER_TAR:-}" ]]; then
   echo "ERROR: PROJECT_ROOT and DOCKER_TAR must be set."

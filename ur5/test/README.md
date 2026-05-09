@@ -11,47 +11,29 @@ This directory contains scripts for testing and verifying the hardware setup for
 
 ## Setup
 
-### 1. Activate the Virtual Environment
+### 1. Environment
 
-First, make sure `uv` is in your PATH:
-
-```bash
-# Add to your ~/.bashrc for persistence, or run each time:
-export PATH="$HOME/.local/bin:$PATH"
-
-# Or source the env file:
-source $HOME/.local/bin/env
-```
-
-Then activate the project's virtual environment:
+**Full environment (if you also need inference/training):**
 
 ```bash
-cd openpi
+GIT_LFS_SKIP_SMUDGE=1 uv sync
 source .venv/bin/activate
 ```
 
-### 2. Install Required Packages
-
-The test_setup scripts require additional hardware-specific packages:
+**Lightweight environment (hardware tests only):**
 
 ```bash
-# Install packages for RealSense cameras and UR robot
-uv pip install pyrealsense2 ur-rtde
+python3 -m venv .venv-robot
+source .venv-robot/bin/activate
+pip install numpy ur-rtde tyro opencv-python pyrealsense2
 ```
 
-**Note:** If you haven't set up the main project environment yet, you may need to install Python development headers first:
-
-```bash
-sudo apt-get install python3-dev
-GIT_LFS_SKIP_SMUDGE=1 uv sync
-```
-
-### 3. Configure Camera Serial Numbers
+### 2. Configure Camera Serial Numbers
 
 Before running camera scripts, get your camera serial numbers:
 
 ```bash
-python test_setup/rs_list.py
+python ur5/test/rs_list.py
 ```
 
 Then edit `camera_test.py` and update the serial numbers:
@@ -61,12 +43,12 @@ SERIAL_BASE = "YOUR_BASE_CAMERA_SERIAL"    # over-the-shoulder (required)
 SERIAL_WRIST = None                         # or set to wrist camera serial
 ```
 
-### 4. Configure UR Robot IP
+### 3. Configure UR Robot IP
 
-Edit `ur_read_state.py` and `ur_test_movement.py` to set your robot's IP address:
+Set the `UR_IP` environment variable, or edit the default in `ur5/defaults.py`:
 
-```python
-UR_IP = "192.10.0.11"  # Change to your robot's IP
+```bash
+export UR_IP="192.10.0.11"
 ```
 
 ## Usage
@@ -75,10 +57,10 @@ UR_IP = "192.10.0.11"  # Change to your robot's IP
 
 ```bash
 # List connected cameras
-python test_setup/rs_list.py
+python ur5/test/rs_list.py
 
 # Test camera feed
-python test_setup/camera_test.py
+python ur5/test/camera_test.py
 # Press 'q' to quit
 ```
 
@@ -86,11 +68,11 @@ python test_setup/camera_test.py
 
 ```bash
 # Read robot state (continuous monitoring)
-python test_setup/ur_read_state.py
+python ur5/test/ur_read_state.py
 # Press Ctrl+C to stop
 
 # Test robot movement (safe base joint nudge)
-python test_setup/ur_test_movement.py
+python ur5/test/ur_test_movement.py
 ```
 
 ## Troubleshooting

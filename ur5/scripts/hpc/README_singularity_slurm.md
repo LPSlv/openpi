@@ -2,7 +2,7 @@
 
 This guide implements the HPC plan for fine-tuning with Singularity. It mirrors the
 repo's Docker training setup (Ubuntu 22.04 + CUDA + FFmpeg 7) and runs the same
-commands from `local/scripts/README.md`.
+commands from `ur5/scripts/README.md`.
 
 ## 1) Directory layout on /gpfs
 
@@ -31,7 +31,7 @@ openpi_hpc/
 Use the setup helper in this directory:
 
 ```
-local/scripts/hpc/setup_gpfs_layout.sh
+ur5/scripts/hpc/setup_gpfs_layout.sh
 ```
 
 ## 2) Build the Singularity image
@@ -63,7 +63,7 @@ Or use the helper script:
 ```
 PROJECT_ROOT=/gpfs/space/projects/<myproject>/openpi_hpc \
 DOCKER_TAR=/gpfs/space/projects/<myproject>/openpi_hpc/containers/openpi_train.tar \
-  local/scripts/hpc/build_sif_from_docker_archive.sh
+  ur5/scripts/hpc/build_sif_from_docker_archive.sh
 ```
 
 **Option B: direct pull/build on HPC (if OCI access is allowed)**
@@ -91,7 +91,7 @@ Both scripts:
 ### Norm stats
 
 ```
-sbatch local/scripts/hpc/slurm_norm_stats.sh
+sbatch ur5/scripts/hpc/slurm_norm_stats.sh
 ```
 
 This runs:
@@ -103,7 +103,7 @@ uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune
 ### Training
 
 ```
-sbatch local/scripts/hpc/slurm_train.sh
+sbatch ur5/scripts/hpc/slurm_train.sh
 ```
 
 This runs:
@@ -120,7 +120,7 @@ If compute nodes cannot reach Hugging Face or GCS, pre-stage caches on a node
 that has internet access. Use:
 
 ```
-sbatch local/scripts/hpc/slurm_prefetch_cache.sh
+sbatch ur5/scripts/hpc/slurm_prefetch_cache.sh
 ```
 
 Then re-run training with offline flags enabled in `slurm_train.sh`

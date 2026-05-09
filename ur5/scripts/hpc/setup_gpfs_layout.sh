@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Usage:
 #   PROJECT_ROOT=/gpfs/space/projects/<myproject>/openpi_hpc \
-#     local/scripts/hpc/setup_gpfs_layout.sh
+#     ur5/scripts/hpc/setup_gpfs_layout.sh
 
 if [[ -z "${PROJECT_ROOT:-}" ]]; then
   echo "ERROR: PROJECT_ROOT is not set."

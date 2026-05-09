@@ -134,15 +134,11 @@ def _compute_gripper_oversample_weights(
     gripper_dim: int = 6,
     transition_threshold: float = 0.3,
 ) -> torch.Tensor:
-    """Compute per-sample weights for oversampling gripper transition frames.
+    """Per-sample weights for oversampling gripper transition frames.
 
-    CUSTOM MODIFICATION: Scans the raw gripper column from the LeRobot dataset
-    to find frames whose action chunk (window of action_horizon steps) contains
-    a gripper transition. Those frames get ``oversample_factor`` weight; all
-    others get 1.0.
-
-    Uses the underlying dataset table for fast scanning (no image loading).
-    To revert: set gripper_oversample_factor=None in LeRobotUR5DataConfig.
+    Frames whose action chunk (window of action_horizon steps) contains a
+    gripper transition get oversample_factor weight; others get 1.0. Reads
+    the raw HF dataset directly to avoid loading images.
     """
     n = len(dataset)
     weights = torch.ones(n)
@@ -372,10 +368,8 @@ def create_torch_data_loader(
     """
     dataset = create_torch_dataset(data_config, action_horizon, model_config)
 
-    # ---- Gripper transition oversampling (CUSTOM MODIFICATION) ----
-    # Compute sample weights BEFORE applying transforms (faster — raw dataset access).
-    # Must be done before transform_dataset because transforms may change action format.
-    # To revert: set gripper_oversample_factor=None in LeRobotUR5DataConfig.
+    # Compute sample weights before applying transforms — transforms may change
+    # the action format, and raw dataset access skips image loading.
     gripper_sampler = None
     if data_config.gripper_oversample_factor is not None:
         logging.info(

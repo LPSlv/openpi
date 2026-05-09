@@ -74,25 +74,23 @@ def main():
     parser.add_argument("--filter", default="", help="Only include checkpoints whose name contains this string")
     args = parser.parse_args()
 
-    # Find all checkpoint directories (numeric steps + merged checkpoints)
+    # collect numeric steps and merged checkpoints (e.g. 499_merged_0.3)
     ckpt_base = pathlib.Path(args.checkpoint_dir)
     step_dirs = []
     for d in ckpt_base.iterdir():
         if not d.is_dir():
             continue
-        # Include numeric steps and merged checkpoints (e.g., 499_merged_0.3)
         if d.name.isdigit() or (d / "params").exists():
             if args.filter and args.filter not in d.name:
                 continue
             step_dirs.append(d)
-    # Sort: numeric first (by number), then non-numeric alphabetically
+    # numeric steps sort first (by number), then everything else alphabetically
     step_dirs.sort(key=lambda d: (0, int(d.name)) if d.name.isdigit() else (1, d.name))
     if not step_dirs:
         print(f"No checkpoint directories found in {ckpt_base}")
         sys.exit(1)
     print(f"Found {len(step_dirs)} checkpoints: {[d.name for d in step_dirs]}")
 
-    # Load eval assets
     eval_dir = pathlib.Path(args.eval_assets)
     dataset_files = sorted(eval_dir.glob("dataset_pregrip_*.npz"))
     robot_files = sorted(eval_dir.glob("robot_step_*.npz"))
@@ -102,32 +100,29 @@ def main():
         print(f"No eval assets found in {eval_dir}")
         sys.exit(1)
 
-    # Build eval observation dict
     eval_observations = {}
 
-    # Dataset pre-grip images (should activate gripper)
-    for f in dataset_files[:2]:  # Use 2 to save time
+    # dataset pre-grip frames should activate the gripper
+    for f in dataset_files[:2]:  # only 2 to keep total inference time reasonable
         obs = load_eval_obs(str(f))
         name = f.stem
         eval_observations[f"ds_{name}"] = obs
-        # Brightness perturbations
         eval_observations[f"ds_{name}_dark"] = perturb_brightness(obs, 0.6)
         eval_observations[f"ds_{name}_bright"] = perturb_brightness(obs, 1.5)
 
-    # Robot images (the real test)
-    for f in robot_files[:2]:  # Use 2 to save time
+    # robot images are the actual generalization test
+    for f in robot_files[:2]:
         eval_observations[f"robot_{f.stem}"] = load_eval_obs(str(f))
 
     obs_names = list(eval_observations.keys())
     print(f"Eval observations: {obs_names}")
 
-    # Import here to avoid slow import if args are wrong
+    # import deferred so a bad --config exits before paying the import cost
     from openpi.policies import policy_config as pc
     from openpi.training import config as cfg
 
     train_config = cfg.get_config(args.config)
 
-    # Evaluate each checkpoint
     all_results = {}
     for step_dir in step_dirs:
         step = step_dir.name
@@ -138,7 +133,7 @@ def main():
         except Exception as e:
             import traceback
             print(f"  Failed to load: {e}")
-            # Debug: show what's in the checkpoint
+            # surface what's actually in the checkpoint to make the failure debuggable
             params_path = step_dir / "params"
             if params_path.exists():
                 print(f"  params/ contents: {[f.name for f in params_path.iterdir()][:10]}")
@@ -161,15 +156,13 @@ def main():
             tag = "GRIP" if r["mean"] > 0.3 else "open"
             print(f"  {name:45s}: gripper={r['mean']:+.4f} +/- {r['std']:.4f}  [{tag}]")
 
-        # Cleanup to free memory
-        del policy
+        del policy  # free memory before loading the next checkpoint
 
-    # Summary table
     print("\n" + "=" * 100)
     print("GENERALIZATION SUMMARY")
     print("=" * 100)
 
-    # Categorize observations
+    # split observations by category for the summary table
     ds_orig = [n for n in obs_names if n.startswith("ds_") and "dark" not in n and "bright" not in n]
     ds_perturbed = [n for n in obs_names if "dark" in n or "bright" in n]
     robot = [n for n in obs_names if n.startswith("robot_")]

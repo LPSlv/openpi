@@ -23,9 +23,9 @@ os.environ.setdefault("JAX_PLATFORMS", "cpu")
 import numpy as np
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Helpers
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 RESET_POSE = np.array([-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0], dtype=np.float32)
 
@@ -57,9 +57,9 @@ def section(title):
     print(f"{'='*70}\n")
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Test A: Data pipeline round-trip
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 def test_a_data_pipeline():
     section("TEST A: Data Pipeline Round-Trip")
@@ -70,7 +70,7 @@ def test_a_data_pipeline():
     config = _config.get_config(SMOOTH8_CONFIG)
     data_config = config.data.create(config.assets_dirs, config.model)
 
-    # Create a sample with known gripper values
+    # synthetic sample with known gripper values
     sample = {
         "joints": np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6], dtype=np.float32),
         "gripper": np.array([0.8], dtype=np.float32),
@@ -82,12 +82,10 @@ def test_a_data_pipeline():
         ),
         "prompt": "test",
     }
-    # Set a transition at step 25
-    sample["actions"][25:, 6] = 0.1  # gripper opens midway
+    sample["actions"][25:, 6] = 0.1  # transition at step 25, gripper opens midway
 
     original_gripper = sample["actions"][:, 6].copy()
 
-    # Apply input transforms
     s1 = copy.deepcopy(sample)
     for t in data_config.data_transforms.inputs:
         s1 = t(s1)
@@ -98,7 +96,6 @@ def test_a_data_pipeline():
     gripper_unchanged = np.allclose(s1["actions"][:, 6], original_gripper, atol=1e-6)
     print(f"  DeltaActions left gripper unchanged: {gripper_unchanged}")
 
-    # Normalize
     norm_stats = data_config.norm_stats
     if norm_stats:
         normalize = _transforms.Normalize(norm_stats, use_quantiles=data_config.use_quantile_norm)
@@ -108,7 +105,7 @@ def test_a_data_pipeline():
         print(f"  actions[:, 6] normalized (gripper=0.1): {s2['actions'][30, 6]:.4f}")
         print(f"  actions[:, 0] normalized (joint delta):  {s2['actions'][0, 0]:.4f}")
 
-        # Unnormalize round-trip
+        # round-trip through Unnormalize
         unnormalize = _transforms.Unnormalize(norm_stats, use_quantiles=data_config.use_quantile_norm)
         s3 = unnormalize(copy.deepcopy(s2))
         roundtrip_err = np.max(np.abs(s3["actions"][:, 6] - s1["actions"][:, 6]))
@@ -124,9 +121,9 @@ def test_a_data_pipeline():
     results["A_delta_unchanged"] = gripper_unchanged
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Test B: Norm stats verification
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 def test_b_norm_stats():
     section("TEST B: Norm Stats Verification")
@@ -154,15 +151,14 @@ def test_b_norm_stats():
             for i in range(real_dims):
                 print(f"    [{i}] {dim_names[i]:>8s}: mean={mean[i]:+.6f}  std={std[i]:.6f}")
 
-            # Check gripper stats specifically
             if real_dims >= 7:
                 g_mean, g_std = mean[6], std[6]
                 print(f"\n  Gripper {key} normalization:")
-                print(f"    raw=0.0 (open)  → normalized: {(0.0 - g_mean) / (g_std + 1e-6):+.4f}")
-                print(f"    raw=0.5 (half)  → normalized: {(0.5 - g_mean) / (g_std + 1e-6):+.4f}")
-                print(f"    raw=1.0 (close) → normalized: {(1.0 - g_mean) / (g_std + 1e-6):+.4f}")
+                print(f"    raw=0.0 (open)  -> normalized: {(0.0 - g_mean) / (g_std + 1e-6):+.4f}")
+                print(f"    raw=0.5 (half)  -> normalized: {(0.5 - g_mean) / (g_std + 1e-6):+.4f}")
+                print(f"    raw=1.0 (close) -> normalized: {(1.0 - g_mean) / (g_std + 1e-6):+.4f}")
 
-    # Compare the two checkpoints' gripper stats
+    # cross-check the two checkpoints' gripper stats
     try:
         with open(os.path.join(SMOOTH8_CKPT, "assets/ur5e/norm_stats.json")) as f:
             s8 = json.load(f)["norm_stats"]["actions"]
@@ -180,9 +176,9 @@ def test_b_norm_stats():
         results["B_stats_match"] = None
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Test C: Full inference pipeline
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 def test_c_inference(config_name, ckpt_path, label):
     section(f"TEST C: Inference Pipeline — {label}")
@@ -200,7 +196,6 @@ def test_c_inference(config_name, ckpt_path, label):
     policy = _policy_config.create_trained_policy(config, ckpt_path, default_prompt=PROMPT)
     print(f"  Model loaded. action_horizon={config.model.action_horizon}")
 
-    # Test with gripper=0 (open)
     obs_open = make_obs(gripper_state=0.0)
     gripper_vals_open = []
     print(f"\n  Running 5 inferences with gripper_state=0.0 (open):")
@@ -214,7 +209,6 @@ def test_c_inference(config_name, ckpt_path, label):
     all_g_open = np.concatenate(gripper_vals_open)
     print(f"  Overall open: mean={all_g_open.mean():.4f} std={all_g_open.std():.4f} range=[{all_g_open.min():.4f}, {all_g_open.max():.4f}]")
 
-    # Test with gripper=1 (closed)
     obs_closed = make_obs(gripper_state=1.0)
     gripper_vals_closed = []
     print(f"\n  Running 5 inferences with gripper_state=1.0 (closed):")
@@ -227,7 +221,7 @@ def test_c_inference(config_name, ckpt_path, label):
     all_g_closed = np.concatenate(gripper_vals_closed)
     print(f"  Overall closed: mean={all_g_closed.mean():.4f} std={all_g_closed.std():.4f} range=[{all_g_closed.min():.4f}, {all_g_closed.max():.4f}]")
 
-    # Key metric: does the model respond to gripper state?
+    # the headline metric: does the model react to gripper state at all?
     diff = abs(all_g_closed.mean() - all_g_open.mean())
     print(f"\n  Gripper response to state change: |closed_mean - open_mean| = {diff:.4f}")
     responds = diff > 0.05
@@ -240,9 +234,9 @@ def test_c_inference(config_name, ckpt_path, label):
     return policy
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Test D: ODE step sweep
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 def test_d_ode_sweep(config_name, ckpt_path, label):
     section(f"TEST D: ODE Step Sweep — {label}")
@@ -268,9 +262,9 @@ def test_d_ode_sweep(config_name, ckpt_path, label):
         results[f"D_{label}_steps{num_steps}"] = float(g.mean())
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Test E: Action chunk temporal analysis
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 def test_e_temporal(config_name, ckpt_path, label):
     section(f"TEST E: Action Chunk Temporal Analysis — {label}")
@@ -298,7 +292,6 @@ def test_e_temporal(config_name, ckpt_path, label):
     for i in range(0, horizon, max(1, horizon // 20)):
         print(f"  {i:4d}  {actions[i, 6]:+8.4f}  {actions[i, 0]:+8.4f}")
 
-    # Find max gripper value and its timestep
     max_g = actions[:, 6].max()
     max_g_step = actions[:, 6].argmax()
     min_g = actions[:, 6].min()
@@ -306,22 +299,22 @@ def test_e_temporal(config_name, ckpt_path, label):
     print(f"  Min gripper: {min_g:.4f}")
     print(f"  Gripper range across chunk: {max_g - min_g:.4f}")
 
-    # Check if gripper signal appears after HORIZON_STEPS=10
+    # check whether the gripper signal lives past HORIZON_STEPS=10 in the bridge
     first10_max = actions[:10, 6].max()
     rest_max = actions[10:, 6].max() if horizon > 10 else 0
     print(f"\n  First 10 steps gripper max: {first10_max:.4f}")
     if horizon > 10:
         print(f"  Steps 10+ gripper max:      {rest_max:.4f}")
         if rest_max > first10_max + 0.05:
-            print(f"  WARNING: Gripper signal appears AFTER step 10 — HORIZON_STEPS=10 may miss it!")
+            print("  WARNING: Gripper signal appears AFTER step 10 - HORIZON_STEPS=10 may miss it!")
             results[f"E_{label}_late_signal"] = True
         else:
             results[f"E_{label}_late_signal"] = False
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Test F: Model comparison (og_smooth-3 vs smooth-8)
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 def test_f_comparison():
     section("TEST F: Model Comparison — og_smooth-3 vs smooth-8")
@@ -354,31 +347,30 @@ def test_f_comparison():
         results[f"F_{name}_gripper_max"] = float(g.max())
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 # Main
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 def main():
     print("=" * 70)
-    print("  GRIPPER DIAGNOSTICS — Comprehensive Pipeline Test")
+    print("  GRIPPER DIAGNOSTICS - Comprehensive Pipeline Test")
     print("=" * 70)
     print(f"  JAX_PLATFORMS={os.environ.get('JAX_PLATFORMS', 'not set')}")
 
-    # Test A: Data pipeline (no model needed)
+    # tests A and B don't need model loading
     try:
         test_a_data_pipeline()
     except Exception as e:
         print(f"  TEST A FAILED: {e}")
         import traceback; traceback.print_exc()
 
-    # Test B: Norm stats (no model needed)
     try:
         test_b_norm_stats()
     except Exception as e:
         print(f"  TEST B FAILED: {e}")
         import traceback; traceback.print_exc()
 
-    # Test C: Inference for both models
+    # test C runs inference on both checkpoints
     for label, cfg, ckpt in [("og_smooth3", OG_SMOOTH3_CONFIG, OG_SMOOTH3_CKPT),
                                ("smooth8", SMOOTH8_CONFIG, SMOOTH8_CKPT)]:
         try:
@@ -387,14 +379,13 @@ def main():
             print(f"  TEST C ({label}) FAILED: {e}")
             import traceback; traceback.print_exc()
 
-    # Test D: ODE sweep (only on smooth-8 to save time)
+    # ODE sweep is expensive, only run it on smooth-8
     try:
         test_d_ode_sweep(SMOOTH8_CONFIG, SMOOTH8_CKPT, "smooth8")
     except Exception as e:
         print(f"  TEST D FAILED: {e}")
         import traceback; traceback.print_exc()
 
-    # Test E: Temporal analysis for both
     for label, cfg, ckpt in [("og_smooth3", OG_SMOOTH3_CONFIG, OG_SMOOTH3_CKPT),
                                ("smooth8", SMOOTH8_CONFIG, SMOOTH8_CKPT)]:
         try:
@@ -403,14 +394,12 @@ def main():
             print(f"  TEST E ({label}) FAILED: {e}")
             import traceback; traceback.print_exc()
 
-    # Test F: Direct comparison
     try:
         test_f_comparison()
     except Exception as e:
         print(f"  TEST F FAILED: {e}")
         import traceback; traceback.print_exc()
 
-    # Summary
     section("SUMMARY")
     for k, v in sorted(results.items()):
         status = "PASS" if v is True else "FAIL" if v is False else str(v)

@@ -59,72 +59,64 @@ class RobotiqGripperSocket:
             self._rx_buf.clear()
 
     def _recv_line(self) -> str:
-        """Receive a single \\n-terminated line (stripped).
+        """Receive one \\n-terminated line.
 
-        Also handles responses without newline (e.g., "ack" without \\n).
-        Uses short timeouts per recv() call to avoid blocking for full socket timeout.
+        Some responses (notably plain "ack") arrive without a newline, so the
+        loop also returns once an ack is buffered. Each recv() uses a short
+        timeout instead of the full socket timeout to avoid long stalls.
         """
         if self.socket is None:
             raise ConnectionError("Robotiq socket not connected")
 
-        # Check if we already have a complete line
         nl = self._rx_buf.find(b"\n")
         if nl != -1:
             line = bytes(self._rx_buf[:nl])
             del self._rx_buf[: nl + 1]
             return line.decode(self.ENCODING, errors="replace").strip()
 
-        # Check if buffer contains "ack" without newline (common case)
+        # bare "ack" already in the buffer
         if len(self._rx_buf) > 0:
             buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
             if buf_str == "ack":
                 self._rx_buf.clear()
                 return "ack"
 
-        # Use shorter timeout per recv() call to avoid blocking for full 8s
-        recv_timeout = 0.5  # 500ms per recv() call
+        recv_timeout = 0.5  # per recv() call, in seconds
         original_timeout = self.socket.gettimeout()
 
         try:
             self.socket.settimeout(recv_timeout)
             t0 = time.time()
-            grace_period = 0.1  # 100ms grace period for newline after receiving data
+            grace_period = 0.1  # wait this long after data for a trailing newline
 
             while True:
-                # Check for newline
                 nl = self._rx_buf.find(b"\n")
                 if nl != -1:
                     line = bytes(self._rx_buf[:nl])
                     del self._rx_buf[: nl + 1]
                     return line.decode(self.ENCODING, errors="replace").strip()
 
-                # Check if buffer contains "ack" (with or without newline)
                 if len(self._rx_buf) > 0:
                     buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-                    if "ack" in buf_str:
-                        # If we have "ack" and grace period expired, return it
-                        if time.time() - t0 > grace_period:
-                            self._rx_buf.clear()
-                            return "ack"
+                    if "ack" in buf_str and time.time() - t0 > grace_period:
+                        self._rx_buf.clear()
+                        return "ack"
 
-                # Try to receive more data with short timeout
                 try:
                     chunk = self.socket.recv(1024)
                     if not chunk:
                         raise ConnectionError("Robotiq socket closed by peer")
                     self._rx_buf.extend(chunk)
-                    t0 = time.time()  # Reset grace period when we receive data
+                    t0 = time.time()  # reset the grace window on fresh data
                 except socket.timeout:
-                    # If we have "ack" in buffer and timeout, return it
                     if len(self._rx_buf) > 0:
                         buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
                         if "ack" in buf_str:
                             self._rx_buf.clear()
                             return "ack"
-                    # Otherwise, raise timeout - caller can handle it
+                    # let the caller decide what to do with the timeout
                     raise
         finally:
-            # Restore original timeout
             self.socket.settimeout(original_timeout)
 
     def _send_and_recv_line(self, cmd: str) -> str:
@@ -136,12 +128,12 @@ class RobotiqGripperSocket:
 
     @staticmethod
     def _is_ack(line: str) -> bool:
-        """Check if response contains 'ack' (handles variations with/without newline)."""
         return "ack" in line.strip().lower()
 
     def _set_vars(self, var_dict: OrderedDict[str, int]) -> None:
-        # Edge-trigger fix: set GTO 0 first if GTO is in the command, then set all vars with GTO 1
-        # Do NOT call _set_var() here to avoid infinite recursion - send directly
+        # GTO needs an edge trigger, so when it appears in the batch we drop it
+        # to 0 first then send the full batch with GTO=1; we send directly here
+        # rather than going through _set_var to avoid recursion
         if self.GTO in var_dict:
             line0 = self._send_and_recv_line("SET GTO 0\n")
             if not self._is_ack(line0):
@@ -172,7 +164,7 @@ class RobotiqGripperSocket:
     def _reset(self) -> None:
         self._set_var(self.ACT, 0)
         self._set_var(self.ATR, 0)
-        # Wait until ACT=0 and STA=0
+        # poll until both ACT and STA report 0
         t0 = time.time()
         while time.time() - t0 < 5.0:
             if self._get_var(self.ACT) == 0 and self._get_var(self.STA) == 0:
@@ -190,7 +182,7 @@ class RobotiqGripperSocket:
             return
         self._reset()
         self._set_var(self.ACT, 1)
-        # Wait until active (STA=3)
+        # wait for STA=3 (active)
         t0 = time.time()
         while time.time() - t0 < 10.0:
             if self._get_var(self.ACT) == 1 and self._get_var(self.STA) == 3:
@@ -202,10 +194,9 @@ class RobotiqGripperSocket:
         position = int(np.clip(position, 0, 255))
         speed = int(np.clip(speed, 0, 255))
         force = int(np.clip(force, 0, 255))
-        # Send command once
         self._set_vars(OrderedDict([(self.POS, position), (self.SPE, speed), (self.FOR, force), (self.GTO, 1)]))
 
-        # Poll lightly with hard deadline to avoid hanging forever on blocking GETs
+        # poll with a hard deadline so we never hang on a blocking GET
         deadline = time.time() + 12.0
         last_good_obj = None
         consecutive_failures = 0
@@ -231,7 +222,7 @@ class RobotiqGripperSocket:
                             pass
             time.sleep(0.15)
 
-        # Timeout diagnostics
+        # timeout, gather diagnostics for the error message
         try:
             sta = self._get_var(self.STA)
             flt = self._get_var(self.FLT)

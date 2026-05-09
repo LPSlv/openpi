@@ -34,19 +34,18 @@ class UR5Inputs(transforms.DataTransformFn):
     model_type: _model.ModelType = _model.ModelType.PI0
 
     def __call__(self, data: dict) -> dict:
-        # Support three input formats:
-        # 1. Training with separate joints/gripper (your datasets)
-        # 2. Training with combined state (F-Fer datasets: observation.state is 7D)
-        # 3. Inference (observation/state + observation/image + observation/wrist_image)
+        # three accepted input shapes:
+        #   1. training with separate joints (6D) + gripper (1D)
+        #   2. training with a combined 7D state mapped to the "joints" key
+        #      (this is how F-Fer's datasets land here, observation.state is 7D)
+        #   3. inference, where observation/state is already 7D
         if "joints" in data and "gripper" in data:
-            # Format 1: separate joints (6D) + gripper (1D)
             joints = np.asarray(data["joints"]).reshape(-1)
             gripper = np.asarray(data["gripper"]).reshape(-1)
             state = np.concatenate([joints, gripper])
             base_image = _parse_image(data["base_rgb"])
             wrist_image = _parse_image(data["wrist_rgb"])
         elif "joints" in data and "gripper" not in data:
-            # Format 2: combined state mapped to "joints" key (e.g. F-Fer's observation.state → joints)
             full = np.asarray(data["joints"]).reshape(-1)
             if full.shape[0] == 7:
                 state = full
@@ -57,7 +56,6 @@ class UR5Inputs(transforms.DataTransformFn):
             base_image = _parse_image(data["base_rgb"])
             wrist_image = _parse_image(data["wrist_rgb"])
         elif "observation/state" in data:
-            # Inference format: state is already concatenated (joints + gripper)
             state = np.asarray(data["observation/state"], dtype=np.float32).reshape(-1)
             if state.shape[0] != 7:
                 raise ValueError(f"Expected observation/state shape (7,), got {state.shape}.")
@@ -69,14 +67,14 @@ class UR5Inputs(transforms.DataTransformFn):
                 "(observation/state, observation/image, observation/wrist_image) keys"
             )
 
-        # Model image-key conventions differ slightly between PI0/PI05 vs PI0_FAST.
+        # image-key conventions differ between pi0/pi05 and pi0_fast
         match self.model_type:
             case _model.ModelType.PI0 | _model.ModelType.PI05:
                 names = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
                 images = (base_image, wrist_image, np.zeros_like(base_image))
                 image_masks = (np.True_, np.True_, np.False_)
             case _model.ModelType.PI0_FAST:
-                # PI0_FAST expects (base_0_rgb, base_1_rgb, wrist_0_rgb) and we do not mask padding images.
+                # pi0_fast wants (base_0_rgb, base_1_rgb, wrist_0_rgb) and doesn't mask the padding image
                 names = ("base_0_rgb", "base_1_rgb", "wrist_0_rgb")
                 images = (base_image, np.zeros_like(base_image), wrist_image)
                 image_masks = (np.True_, np.True_, np.True_)
@@ -92,7 +90,7 @@ class UR5Inputs(transforms.DataTransformFn):
         if "actions" in data:
             inputs["actions"] = data["actions"]
 
-        # Pass the prompt (aka language instruction) to the model.
+        # forward the language instruction
         if "prompt" in data:
             inputs["prompt"] = data["prompt"]
 

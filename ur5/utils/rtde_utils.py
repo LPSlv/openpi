@@ -17,9 +17,9 @@ def safe_disconnect(obj) -> None:
 
 
 def teardown_rtde_control(ctrl: rtde_control.RTDEControlInterface | None) -> None:
-    """Deterministic RTDEControl teardown (best-effort).
+    """Best-effort RTDEControl teardown.
 
-    Order: speedStop → stopScript → disconnect (all ignore errors).
+    Calls speedStop, stopScript, then disconnect; each step swallows errors.
     """
     if ctrl is None:
         return

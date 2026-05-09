@@ -60,7 +60,7 @@ def main(
     if not raw_dir.exists():
         raise FileNotFoundError(raw_dir)
 
-    # Clean up any existing dataset in the output directory
+    # remove any prior dataset at the target path
     output_path = HF_LEROBOT_HOME / repo_id
     if output_path.exists():
         shutil.rmtree(output_path)
@@ -135,8 +135,8 @@ def main(
                     }
                 )
 
-        # Workaround: LeRobot maps shape (1,) features to HF Value (scalar),
-        # but validation stores (1,) numpy arrays. Squeeze to scalars before save.
+        # lerobot maps shape (1,) features to a HF Value (scalar) but validation
+        # writes them back as (1,) numpy arrays, so we squeeze before save
         if "gripper" in dataset.episode_buffer:
             for j in range(len(dataset.episode_buffer["gripper"])):
                 dataset.episode_buffer["gripper"][j] = dataset.episode_buffer["gripper"][j].item()

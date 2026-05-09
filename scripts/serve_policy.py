@@ -56,8 +56,8 @@ class Args:
     # Optional override: load normalization stats from a specific directory containing `norm_stats.json`.
     # If set, this replaces the norm stats that would otherwise be loaded from the checkpoint directory.
     #
-    # Example (UR5 bus-the-table stats in this repo):
-    #   --norm_stats_dir=assets/pi05_ur5_low_mem_finetune/ims/ur5_bus_the_table
+    # Example (UR5 stats):
+    #   --norm_stats_dir=assets/pi05_ur5/<asset_id>
     norm_stats_dir: str | None = None
 
     # Specifies how to load the policy. If not provided, the default policy for the environment will be used.

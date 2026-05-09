@@ -51,7 +51,7 @@ export SINGULARITYENV_HOME="/openpi_home"
 BIND_PATHS="$REPO_DIR:/app,$OUTPUTS_DIR:/outputs,$CACHE_DIR:/cache,$CACHE_DIR/jax_cache:/openpi_home,$OUTPUTS_DIR/assets:/app/assets"
 
 singularity exec --nv --bind "$BIND_PATHS" "$CONTAINER" \
-  bash -lc "cd /app && uv run scripts/train.py pi05_ur5_low_mem_finetune \
+  bash -lc "cd /app && uv run scripts/train.py ${CONFIG_NAME:-pi05_ur5_blueblock10} \
     --exp-name=${EXP_NAME} \
     --overwrite \
     --checkpoint-base-dir=/outputs/checkpoints \

@@ -46,11 +46,11 @@ BIND_PATHS="$REPO_DIR:/app,$OUTPUTS_DIR:/outputs,$CACHE_DIR:/cache,$CACHE_DIR/ja
 
 # 1) Warm the dataset and assets caches via norm stats.
 singularity exec --nv --bind "$BIND_PATHS" "$CONTAINER" \
-  bash -lc 'cd /app && uv run scripts/compute_norm_stats.py --config-name pi05_ur5_low_mem_finetune --max-frames 128'
+  bash -lc "cd /app && uv run scripts/compute_norm_stats.py --config-name ${CONFIG_NAME:-pi05_ur5_blueblock10} --max-frames 128"
 
 # 2) Warm model checkpoint cache with a tiny training run.
 singularity exec --nv --bind "$BIND_PATHS" "$CONTAINER" \
-  bash -lc 'cd /app && uv run scripts/train.py pi05_ur5_low_mem_finetune \
+  bash -lc "cd /app && uv run scripts/train.py ${CONFIG_NAME:-pi05_ur5_blueblock10} \
     --exp-name=cache_warmup \
     --overwrite \
     --num-train-steps=1 \

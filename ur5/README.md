@@ -19,13 +19,6 @@ ur5/
     convert_raw_deltas_to_absolute.py    one-shot: migrate old delta datasets
     combine_and_split_ur5_datasets.py    build nested ablation datasets
     download_checkpoints.py              docker build-time checkpoint helper
-    fix_opencv.sh                        docker OpenCV reinstall helper
-    ur5e_diagnostics.py                  UR5e hardware sanity over SSH
-    test_gripper_diagnostics.py          gripper transform / norm-stats / inference probe
-    eval_generalization.py               sweep checkpoints, score gripper response
-    verify_data_pipeline.py              trace gripper through every transform stage
-    compare_training_vs_inference_images.py   side-by-side dataset vs robot frames
-    replay_inference_recording.py        offline replay of recorded inference
   test/
     rs_list.py                      list connected RealSense cameras
     camera_test.py                  dual-camera live preview

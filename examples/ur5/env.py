@@ -38,9 +38,7 @@ class UR5RealEnvironment(_environment.Environment):
 
     @override
     def reset(self) -> None:
-        """Reset the environment."""
         self._env.reset()
-        # Get observation after reset and store as timestep
         obs = self._env.get_observation()
         self._ts = {
             "observation": obs,
@@ -49,26 +47,23 @@ class UR5RealEnvironment(_environment.Environment):
 
     @override
     def is_episode_complete(self) -> bool:
-        """Check if episode is complete."""
-        return False  # UR5 episodes don't have a natural completion condition
+        # UR5 episodes don't have a natural completion condition
+        return False
 
     @override
     def get_observation(self) -> dict:
-        """Get current observation."""
         if self._ts is None:
             raise RuntimeError("Timestep is not set. Call reset() first.")
 
         obs = self._ts["observation"].copy()
 
-        # Policy server expects the same key conventions used across environments:
-        # - "observation/state": float32 (7,) = joints(6) + gripper(1)
-        # - "observation/image": uint8 (H,W,3) base camera
-        # - "observation/wrist_image": uint8 (H,W,3) wrist camera
-        #
-        # Note: Model-side UR5 transforms (`openpi.policies.ur5_policy.UR5Inputs`) handle HWC uint8.
+        # the policy server expects the standard keys:
+        #   observation/state        float32 (7,)  = joints(6) + gripper(1)
+        #   observation/image        uint8 (H,W,3) base camera
+        #   observation/wrist_image  uint8 (H,W,3) wrist camera
+        # UR5Inputs in src/openpi/policies/ur5_policy.py handles HWC uint8 from here
         state = np.asarray(obs["qpos"], dtype=np.float32).reshape(-1)
 
-        # Process images into uint8 HWC at the model resolution.
         base_img = obs["images"].get("base")
         wrist_img = obs["images"].get("wrist")
 
@@ -91,16 +86,13 @@ class UR5RealEnvironment(_environment.Environment):
 
     @override
     def apply_action(self, action: dict) -> None:
-        """Apply action to the environment."""
-        # Extract actions array
         actions = action["actions"]
         if actions.ndim == 1:
             actions = actions[None, :]
 
-        # Apply first action in the chunk
+        # only the first action in the chunk gets applied; the rest are dropped
         self._env.step(actions[0])
 
-        # Update timestep with new observation
         obs = self._env.get_observation()
         self._ts = {
             "observation": obs,
@@ -108,5 +100,4 @@ class UR5RealEnvironment(_environment.Environment):
         }
 
     def close(self) -> None:
-        """Clean up resources."""
         self._env.close()

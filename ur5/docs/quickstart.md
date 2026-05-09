@@ -34,14 +34,9 @@ List connected cameras:
 python ur5/test/rs_list.py
 ```
 
-Read robot joint state (verify connectivity):
+Verify the cameras stream:
 ```bash
-python ur5/test/ur_read_state.py
-```
-
-Safe movement test (small base joint nudge + gripper open/close):
-```bash
-python ur5/test/ur_test_movement.py
+python ur5/test/camera_test.py
 ```
 
 ## 3. Record Your First Dataset

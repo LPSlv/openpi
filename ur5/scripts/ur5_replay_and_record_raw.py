@@ -35,7 +35,7 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure repo root is on sys.path so `ur5` is importable when running directly.
+# put the repo root on sys.path so `ur5` resolves when this is run as a script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import cv2
@@ -66,24 +66,22 @@ except ImportError:
         return img.astype(np.uint8)
 
     def resize_with_pad(images: np.ndarray, height: int, width: int) -> np.ndarray:
-        """Resizes an image to target size with padding to maintain aspect ratio."""
+        """Resize keeping aspect ratio, padding the rest to the target size."""
         if images.ndim == 3:
             h, w = images.shape[:2]
         else:
             h, w = images.shape[-3:-1]
-        
+
         if h == height and w == width:
             return images
-        
-        # Calculate scaling to fit within target size
+
         scale = min(width / w, height / h)
         new_w = int(w * scale)
         new_h = int(h * scale)
-        
-        # Resize
+
         resized = cv2.resize(images, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-        
-        # Pad to target size
+
+        # center the resized image inside a zero-padded canvas
         if resized.ndim == 3:
             pad_h = (height - new_h) // 2
             pad_w = (width - new_w) // 2
@@ -104,7 +102,7 @@ except ImportError:
 try:
     import pyrealsense2 as rs  # type: ignore
 except Exception:  # pragma: no cover
-    rs = None  # pyrealsense2 is optional until you use cameras
+    rs = None  # pyrealsense2 is only required when cameras are actually used
 
 def _utcnow_iso() -> str:
     return _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
@@ -124,28 +122,24 @@ def _move_to_start_position(
     acc: float = 0.3,
     timeout_sec: float = 10.0,
 ) -> None:
-    """Move robot to starting position using RTDE moveJ."""
+    """Move robot to starting position via RTDE moveJ (URScript fallback)."""
     target_q = np.asarray(start_q_rad, dtype=np.float64)
-    
-    # Use RTDE moveJ instead of URScript to avoid script conflicts
+
+    # prefer RTDE moveJ over URScript so we don't conflict with a running script
     success = ctrl.moveJ(start_q_rad, vel, acc)
     if not success:
         print("Warning: moveJ command failed, trying URScript method...")
-        # Fallback to URScript if RTDE moveJ doesn't work
-        script = f'movej({start_q_rad}, a={acc}, v={vel})\n'
+        script = f"movej({start_q_rad}, a={acc}, v={vel})\n"
         _send_urscript(ur_ip, script, timeout_sec=timeout_sec)
-        # Wait a bit for script to start
-        time.sleep(0.5)
-    
-    # Wait for movement to complete
+        time.sleep(0.5)  # give the URScript a moment to start
+
     t0 = time.time()
     while time.time() - t0 < timeout_sec:
         current_q = np.asarray(rcv.getActualQ(), dtype=np.float64)
         dist = float(np.linalg.norm(current_q - target_q))
-        if dist < 0.05:  # ~3 degrees tolerance
+        if dist < 0.05:  # ~3 deg tolerance
             print(f"Moved to start position (error: {np.degrees(dist):.2f} deg)")
-            # Ensure any running script is stopped before proceeding
-            time.sleep(0.2)
+            time.sleep(0.2)  # let the controller quiesce
             return
         time.sleep(0.1)
     
@@ -190,7 +184,7 @@ def _ensure_dirs(ep_dir: Path) -> tuple[Path, Path]:
 
 
 def _write_jpg_rgb(path: Path, rgb: np.ndarray, *, quality: int = 95) -> None:
-    # cv2 expects BGR
+    # cv2 wants BGR
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     path.parent.mkdir(parents=True, exist_ok=True)
     ok = cv2.imwrite(str(path), bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
@@ -214,27 +208,26 @@ def _build_movej_program(
     r = max(0.0, float(blend_radius))
     lines: list[str] = [f"def {program_name}():"]
     for i, q in enumerate(waypoints_q):
-        # Remove blending for waypoint if gripper changes at next waypoint (ensures full stop)
+        # if the next waypoint changes the gripper, drop the blend radius here
+        # so the arm fully stops before the gripper command fires
         if gripper_waypoints is not None and i + 1 < len(gripper_waypoints):
             current_g = gripper_waypoints[i] if i < len(gripper_waypoints) else 0.0
             next_g = gripper_waypoints[i + 1]
-            # If gripper changes significantly at next waypoint, remove blending to ensure full stop
-            if abs(next_g - current_g) > 0.1:  # Significant gripper change (10% threshold)
-                r_i = 0.0  # No blending - ensure full stop
+            if abs(next_g - current_g) > 0.1:  # >10% change counts as significant
+                r_i = 0.0
             else:
                 r_i = r if i < (len(waypoints_q) - 1) else 0.0
         else:
             r_i = r if i < (len(waypoints_q) - 1) else 0.0
         lines.append(f"  movej({q}, a={acc}, v={vel}, r={r_i})")
-        # Add pause after waypoint if gripper changes at NEXT waypoint (offset by 1)
-        # This gives time for gripper to complete before reaching the waypoint where gripper change occurs
+        # and pause after this waypoint so the gripper has time to finish
+        # before we hit the next waypoint where it actually changes
         if gripper_waypoints is not None and i + 1 < len(gripper_waypoints):
             current_g = gripper_waypoints[i] if i < len(gripper_waypoints) else 0.0
             next_g = gripper_waypoints[i + 1]
-            # If gripper changes significantly at next waypoint, add pause after current waypoint
-            if abs(next_g - current_g) > 0.1:  # Significant gripper change (10% threshold)
-                lines.append(f"  sleep({gripper_stop_delay_sec})  # Wait for movement to fully stop")
-                lines.append(f"  sleep({gripper_pause_sec})  # Pause for gripper movement (gripper will change at waypoint {i+1}: {current_g:.2f} -> {next_g:.2f})")
+            if abs(next_g - current_g) > 0.1:
+                lines.append(f"  sleep({gripper_stop_delay_sec})  # let movement stop")
+                lines.append(f"  sleep({gripper_pause_sec})  # gripper change at waypoint {i+1}: {current_g:.2f} -> {next_g:.2f}")
     lines.append("end")
     lines.append(f"{program_name}()")
     lines.append("")
@@ -261,28 +254,28 @@ class Args:
     ur_ip: str = _defaults.UR_IP
     prompt: str = os.environ.get("PROMPT", "bus the table")
 
-    # Input waypoints
+    # input waypoints
     waypoints_path: Path = Path("raw_episodes/waypoints.json")
 
-    # Output episode folder
+    # output episode folder
     out_dir: Path = Path(_defaults.OUT_DIR)
     episode_id: str = ""
 
-    # Replay motion params (URScript moveJ)
-    movej_vel: float = 0.1  # rad/s (reduced for slower, safer replay)
-    movej_acc: float = 0.15  # rad/s^2 (reduced for slower, safer replay)
-    blend_radius: float = 0.01  # meters in TCP space for moveL, but also accepted for moveJ blending on UR
-    
-    # Starting position (in degrees, will be converted to radians)
+    # replay motion params (URScript moveJ)
+    movej_vel: float = 0.1  # rad/s, kept low for safer replay
+    movej_acc: float = 0.15  # rad/s^2
+    blend_radius: float = 0.01  # meters of TCP blending (UR also accepts this for moveJ)
+
+    # starting position in degrees, converted to radians at use
     move_to_start: bool = True
     start_position_deg: tuple[float, float, float, float, float, float] = (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0)
-    start_move_vel: float = 0.1  # rad/s
-    start_move_acc: float = 0.15  # rad/s^2
+    start_move_vel: float = 0.1
+    start_move_acc: float = 0.15
 
     # RTDE streaming
     rtde_frequency_hz: float = 125.0
 
-    # Cameras (RealSense)
+    # realsense cameras
     rs_base_serial: str = _defaults.RS_BASE_SERIAL
     rs_wrist_serial: str = _defaults.RS_WRIST_SERIAL
     rs_w: int = int(os.environ.get("RS_W", "640"))
@@ -291,27 +284,27 @@ class Args:
     rs_timeout_ms: int = int(os.environ.get("RS_TIMEOUT_MS", "10000"))
     fake_cam: bool = os.environ.get("FAKE_CAM", "0") == "1"
 
-    # Dataset recording
-    # NOTE: pi0 pretrained model expects 20 Hz for UR5e (see docs/norm_stats.md).
+    # dataset recording
+    # pi0 pretrained ur5e expects 20 Hz, see docs/norm_stats.md
     fps: float = 10.0
     jpeg_quality: int = 95
 
-    # Stop conditions
-    final_q_tol: float = float(np.deg2rad(2.0))  # L2 rad threshold to consider "at goal"
+    # stop conditions
+    final_q_tol: float = float(np.deg2rad(2.0))  # L2 rad threshold for "at goal"
     vel_norm_thresh: float = 0.03  # rad/s
     stop_settle_sec: float = 0.5
     max_seconds: float = 10.0 * 60.0
-    
-    # Gripper timing
-    gripper_advance_distance: float = float(np.deg2rad(30.0))  # Send gripper command when this far from waypoint (rad) - gives time for gripper to complete
-    gripper_pause_sec: float = 1.5  # Pause in URScript after waypoint where gripper changes (seconds)
-    gripper_stop_delay_sec: float = 0.3  # Delay before pause to ensure movement fully stops (seconds)
 
-    # Gripper (Robotiq URCap socket server)
-    use_gripper: bool = True  # Enable gripper control by default
+    # gripper timing
+    gripper_advance_distance: float = float(np.deg2rad(30.0))  # send gripper command this far ahead so it has time to finish
+    gripper_pause_sec: float = 1.5  # URScript sleep after a waypoint that changes the gripper
+    gripper_stop_delay_sec: float = 0.3  # short sleep before that pause so motion fully stops first
+
+    # gripper (Robotiq URCap socket server)
+    use_gripper: bool = True
     robotiq_port: int = _defaults.ROBOTIQ_PORT
     gripper_default: float = 0.0
-    gripper_waypoints: str = ""  # comma-separated list, length == number of waypoints (optional)
+    gripper_waypoints: str = ""  # optional comma-separated list, must match the number of waypoints
     gripper_debounce: float = 0.02
 
 
@@ -323,8 +316,8 @@ def main(args: Args) -> None:
     base_dir, wrist_dir = _ensure_dirs(ep_dir)
 
     waypoints_obj = json.loads(args.waypoints_path.read_text())
-    # Prioritize prompt from waypoints.json (if present), then use explicit --prompt/PROMPT env var, then fallback
-    # This ensures the original waypoint prompt is preserved unless explicitly overridden
+    # prefer the prompt baked into waypoints.json so the original recording
+    # context survives, fall back to --prompt/PROMPT, then a generic default
     waypoint_prompt = waypoints_obj.get("prompt")
     if waypoint_prompt:
         prompt = waypoint_prompt
@@ -336,14 +329,12 @@ def main(args: Args) -> None:
     waypoints_q: list[list[float]] = [list(map(float, w["q"])) for w in waypoints]
     q_goal = np.asarray(waypoints_q[-1], dtype=np.float64)
 
-    # Extract gripper positions from waypoints if available, otherwise use command line argument
+    # gripper positions can come from waypoints.json or the --gripper_waypoints flag
     gripper_wp = None
     if waypoints and "gripper" in waypoints[0]:
-        # Gripper positions are recorded in waypoints
         gripper_wp = [float(w.get("gripper", args.gripper_default)) for w in waypoints]
         print(f"Found gripper positions in waypoints ({len(gripper_wp)} waypoints)")
     else:
-        # Fall back to command line argument
         gripper_wp = _parse_gripper_waypoints(args.gripper_waypoints)
         if gripper_wp is not None:
             print(f"Using gripper positions from command line ({len(gripper_wp)} waypoints)")
@@ -351,7 +342,6 @@ def main(args: Args) -> None:
     if gripper_wp is not None and len(gripper_wp) != len(waypoints_q):
         raise ValueError(f"Gripper waypoints length ({len(gripper_wp)}) must match waypoints ({len(waypoints_q)})")
 
-    # Start cameras
     base_pipe = None
     wrist_pipe = None
     last_base_rgb = None
@@ -363,7 +353,6 @@ def main(args: Args) -> None:
         base_pipe = _start_rs_rgb(args.rs_base_serial, w=args.rs_w, h=args.rs_h, fps=args.rs_fps)
         wrist_pipe = _start_rs_rgb(args.rs_wrist_serial, w=args.rs_w, h=args.rs_h, fps=args.rs_fps) if args.rs_wrist_serial else None
 
-    # Connect to robot via RTDE
     print("Connecting to robot via RTDE (receive)...", end=" ", flush=True)
     try:
         rcv = _create_rtde_receive(args.ur_ip, frequency=args.rtde_frequency_hz, retries=2)
@@ -372,8 +361,7 @@ def main(args: Args) -> None:
         print("FAILED")
         print(f"ERROR: {e}")
         return
-    
-    # Check if robot is ready to move
+
     if not ok_to_move(rcv):
         print("ERROR: Robot not ready (mode or safety). Put in Remote Control, clear any stops, then retry.")
         try:
@@ -395,7 +383,6 @@ def main(args: Args) -> None:
             pass
         return
     
-    # Move to starting position if requested
     if args.move_to_start:
         start_q_rad = [float(np.deg2rad(d)) for d in args.start_position_deg]
         print(f"Moving to start position: {args.start_position_deg} degrees")
@@ -408,18 +395,15 @@ def main(args: Args) -> None:
                 vel=args.start_move_vel,
                 acc=args.start_move_acc,
             )
-            # Small delay to ensure movement is complete and controller is ready
-            time.sleep(0.5)
+            time.sleep(0.5)  # let the controller settle before continuing
         except Exception as e:
             print(f"Warning: Failed to move to start position: {e}")
             print("Continuing anyway...")
 
-    # Initialize gripper
     g_cmd = float(np.clip(args.gripper_default, 0.0, 1.0))
     last_g_sent: float | None = None
-    use_gripper = args.use_gripper  # Local variable that can be modified
-    
-    # Auto-enable gripper if gripper positions are found in waypoints
+    use_gripper = args.use_gripper  # may flip to False below if init fails
+
     if gripper_wp is not None and not args.use_gripper:
         print("Note: Gripper positions found in waypoints, but --use_gripper is False.")
         print("      Gripper will not be controlled during replay. Use --use_gripper to enable.")
@@ -471,14 +455,13 @@ def main(args: Args) -> None:
     (ep_dir / "meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
     (ep_dir / "waypoints.json").write_text(json.dumps(waypoints_obj, indent=2))
 
-    # Ensure any running script is stopped before sending replay program
+    # stop any running URScript before we push our replay program
     try:
         _send_urscript(args.ur_ip, "stop\n")
         time.sleep(0.3)
     except Exception:
-        pass  # Ignore if this fails
-    
-    # Send replay program (moveJ with blending)
+        pass
+
     program = _build_movej_program(
         waypoints_q,
         vel=args.movej_vel,
@@ -493,13 +476,13 @@ def main(args: Args) -> None:
     steps_path = ep_dir / "steps.jsonl"
     f_steps = steps_path.open("w", encoding="utf-8")
 
-    pending_step: dict | None = None  # buffered step; action filled in next tick
+    pending_step: dict | None = None  # buffered step, action gets filled on the next tick
     i = 0
     t0 = time.time()
     next_tick = t0
     final_stable_since: float | None = None
     reached_wp_idx = -1
-    gripper_sent_for_wp = -1  # Track which waypoint we've sent gripper command for
+    gripper_sent_for_wp = -1  # last waypoint index we issued a gripper command for
 
     try:
         while True:
@@ -508,13 +491,13 @@ def main(args: Args) -> None:
                 print(f"Reached max_seconds={args.max_seconds:.1f}; stopping.")
                 break
 
-            # Fixed-FPS loop
+            # fixed-FPS pacing
             if now < next_tick:
                 time.sleep(max(0.0, next_tick - now))
             tick_time = time.time()
             next_tick = next_tick + (1.0 / float(args.fps))
 
-            # Read cameras (best-effort; reuse last frame if missing)
+            # cameras are best-effort, reuse the last frame if a poll missed
             if args.fake_cam:
                 assert last_base_rgb is not None and last_wrist_rgb is not None
                 base_rgb = last_base_rgb
@@ -531,7 +514,7 @@ def main(args: Args) -> None:
                 if wrist_rgb is None:
                     wrist_rgb = last_wrist_rgb
                 if base_rgb is None and wrist_rgb is None:
-                    # No images yet; skip this tick.
+                    # no images yet, skip the tick
                     continue
                 if base_rgb is None:
                     base_rgb = wrist_rgb
@@ -540,59 +523,54 @@ def main(args: Args) -> None:
                 last_base_rgb = base_rgb
                 last_wrist_rgb = wrist_rgb
 
-            # Ensure RTDE receive is healthy
             rcv = ensure_rcv(rcv, args.ur_ip)
-            
-            # Read proprio
+
             q = np.asarray(rcv.getActualQ(), dtype=np.float64)
             qd = np.asarray(rcv.getActualQd(), dtype=np.float64)
 
-            # Track waypoint index progression and (optionally) send gripper commands
+            # track which waypoint we've passed and (optionally) push gripper commands ahead
             dists = [float(np.linalg.norm(q - np.asarray(qw, dtype=np.float64))) for qw in waypoints_q]
             nearest = int(np.argmin(dists))
-            
-            # Update reached waypoint index when actually at waypoint
+
             if nearest > reached_wp_idx and dists[nearest] < args.final_q_tol * 1.5:
                 reached_wp_idx = nearest
-                # Update g_cmd from waypoints if available (for accurate state recording)
+                # mirror the waypoint's gripper into g_cmd so state[6] stays accurate
                 if gripper_wp is not None:
                     g_cmd = float(gripper_wp[nearest])
-            
-            # Send gripper command early based on waypoint progression (offset by 1)
-            # Send gripper command for waypoint N+1 when we've reached waypoint N
-            # This ensures the gripper command is sent early enough
+
+            # send the gripper command for waypoint N+1 as soon as we hit
+            # waypoint N, otherwise the gripper finishes moving too late
             if gripper_wp is not None and use_gripper and gripper is not None:
-                # Target waypoint for gripper command: reached_wp_idx + 1 (offset by 1)
                 target_wp_idx = reached_wp_idx + 1
                 if target_wp_idx < len(gripper_wp) and reached_wp_idx > gripper_sent_for_wp:
                     target_g_cmd = float(gripper_wp[target_wp_idx])
-                    # Only send if different from last sent command
+                    # debounce against the last issued value
                     if last_g_sent is None or abs(target_g_cmd - last_g_sent) > args.gripper_debounce:
                         try:
                             print(f"Sending gripper command for waypoint {target_wp_idx} (reached waypoint {reached_wp_idx}): {target_g_cmd:.3f}")
                             gripper.move_normalized(target_g_cmd)
                             last_g_sent = target_g_cmd
-                            gripper_sent_for_wp = reached_wp_idx  # Track that we sent command for target_wp_idx when at reached_wp_idx
+                            gripper_sent_for_wp = reached_wp_idx
                         except Exception as e:
                             print(f"Warning: Gripper move failed: {e}")
 
-            # Build state (absolute joint positions + gripper)
-            state = np.asarray([*q.tolist(), g_cmd], dtype=np.float32)  # (7,)
+            # state is 7D, joint positions plus the gripper command
+            state = np.asarray([*q.tolist(), g_cmd], dtype=np.float32)
 
-            # Save images
             base_rel = Path("images/base") / f"{i:06d}.jpg"
             wrist_rel = Path("images/wrist") / f"{i:06d}.jpg"
             _write_jpg_rgb(ep_dir / base_rel, base_rgb, quality=args.jpeg_quality)
             _write_jpg_rgb(ep_dir / wrist_rel, wrist_rgb, quality=args.jpeg_quality)
 
-            # Forward-looking absolute actions: action[i] = state[i+1].
-            # Write the previous step now that we know its forward action.
+            # actions are forward-looking absolute: action[i] = state[i+1].
+            # the previous step's action is only known once we capture this state,
+            # so we flush it here.
             if pending_step is not None:
                 pending_step["actions"] = state.tolist()
                 f_steps.write(json.dumps(pending_step) + "\n")
                 f_steps.flush()
 
-            # Buffer current step (action will be filled on next tick)
+            # buffer the current step, action gets filled on the next tick
             pending_step = {
                 "i": i,
                 "t_wall": tick_time,
@@ -606,7 +584,7 @@ def main(args: Args) -> None:
             }
             i += 1
 
-            # Stop condition: near final waypoint and stable
+            # stop once we're near the final waypoint and the joints are stable
             final_dist = float(np.linalg.norm(q - q_goal))
             vel_norm = float(np.linalg.norm(qd))
             at_goal = final_dist < args.final_q_tol
@@ -620,7 +598,7 @@ def main(args: Args) -> None:
                 final_stable_since = None
 
     finally:
-        # Write last buffered step (action = hold current position)
+        # last buffered step: hold the final position as its action
         if pending_step is not None:
             pending_step["actions"] = pending_step["state"]
             f_steps.write(json.dumps(pending_step) + "\n")

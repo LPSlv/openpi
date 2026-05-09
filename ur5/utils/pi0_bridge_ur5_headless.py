@@ -1,11 +1,8 @@
 """UR5 + RealSense bridge for the websocket policy server."""
 
 import os
-import socket
 import sys
-import threading
 import time
-from collections import OrderedDict
 
 # OpenCV GUI in Docker can break with:
 #   "The X11 connection broke (error 1). Did the X11 server die?"
@@ -23,12 +20,15 @@ import rtde_receive
 from openpi_client import image_tools
 from openpi_client import websocket_client_policy
 
+from ur5 import defaults as _defaults
+from ur5.utils.robotiq_gripper import RobotiqGripperHelper
+
 FAKE_CAM = os.environ.get("FAKE_CAM", "0") == "1"
 if not FAKE_CAM:
     import pyrealsense2 as rs
 
 
-UR_IP = os.environ.get("UR_IP", "192.10.0.11")
+UR_IP = os.environ.get("UR_IP", _defaults.UR_IP)
 PROMPT = os.environ.get("PROMPT", "do something")
 
 POLICY_HOST = os.environ.get("POLICY_HOST", "localhost")
@@ -36,10 +36,10 @@ POLICY_PORT = int(os.environ.get("POLICY_PORT", "8000"))
 
 RS_BASE = os.environ.get("RS_BASE", "")
 RS_WRIST = os.environ.get("RS_WRIST", "")
-RS_W = int(os.environ.get("RS_W", "640"))
-RS_H = int(os.environ.get("RS_H", "480"))
-RS_FPS = int(os.environ.get("RS_FPS", "60"))
-RS_TIMEOUT_MS = int(os.environ.get("RS_TIMEOUT_MS", "10000"))
+RS_W = int(os.environ.get("RS_W", str(_defaults.RS_W)))
+RS_H = int(os.environ.get("RS_H", str(_defaults.RS_H)))
+RS_FPS = int(os.environ.get("RS_FPS", str(_defaults.RS_FPS)))  # was hardcoded "60", now matches recording default (30)
+RS_TIMEOUT_MS = int(os.environ.get("RS_TIMEOUT_MS", str(_defaults.RS_TIMEOUT_MS)))
 
 DT = float(os.environ.get("DT", "0.05"))
 VEL = float(os.environ.get("VEL", "0.05"))
@@ -72,13 +72,35 @@ MAX_STEP_DEG = float(os.environ.get("MAX_STEP_DEG", "2.0"))
 
 DRY_RUN = os.environ.get("DRY_RUN", "0") == "1"
 
-# Robotiq Hand-E gripper settings (URCap socket service)
-ROBOTIQ_PORT = 63352
-GRIPPER_PORT = int(os.environ.get("GRIPPER_PORT", str(ROBOTIQ_PORT)))
+GRIPPER_PORT = int(os.environ.get("GRIPPER_PORT", str(_defaults.ROBOTIQ_PORT)))
 USE_GRIPPER = os.environ.get("USE_GRIPPER", "1") == "1"
 GRIPPER_DEBOUNCE = float(os.environ.get("GRIPPER_DEBOUNCE", "0.02"))
+# Binarize gripper command at this threshold (g >= threshold -> 1.0, else 0.0).
+# Set to empty string to disable thresholding (use continuous 0-1 value).
+GRIPPER_THRESHOLD = os.environ.get("GRIPPER_THRESHOLD", "")
 
 SHOW_IMAGES = os.environ.get("SHOW_IMAGES", "1") == "1"
+
+# ---- Camera exposure control ----
+# Per-camera exposure: RS_EXPOSURE for base, RS_WRIST_EXPOSURE for wrist.
+# Set RS_AUTO_EXPOSURE=0 to disable auto-exposure on both cameras.
+# Default: auto-exposure ON (matches recording script behavior).
+RS_AUTO_EXPOSURE = os.environ.get("RS_AUTO_EXPOSURE", "")  # "" = don't touch, "0" = disable, "1" = enable
+RS_EXPOSURE = os.environ.get("RS_EXPOSURE", "")  # "" = don't touch, base camera exposure
+RS_WRIST_EXPOSURE = os.environ.get("RS_WRIST_EXPOSURE", "")  # "" = same as RS_EXPOSURE, otherwise wrist-specific
+
+# ---- Inference recording (CUSTOM MODIFICATION) ----
+# When set, saves each inference observation + action to disk for offline replay.
+# To revert: unset RECORD_DIR or set to empty.
+RECORD_DIR = os.environ.get("RECORD_DIR", "")
+
+# ---- Dual-policy gripper override ----
+# When set, a second policy server provides gripper predictions (dim 6).
+# Arm (dims 0-5) comes from the main policy, gripper from the gripper policy.
+# Use case: main policy has good arm (trained longer), gripper policy has good
+# gripper generalization (early checkpoint that hasn't overfit).
+GRIPPER_POLICY_HOST = os.environ.get("GRIPPER_POLICY_HOST", "")
+GRIPPER_POLICY_PORT = int(os.environ.get("GRIPPER_POLICY_PORT", "8001"))
 
 # Check if OpenCV has GUI support
 _has_gui = False
@@ -147,371 +169,79 @@ if SHOW_IMAGES:
 
 def _process_bgr(bgr: np.ndarray) -> np.ndarray:
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    rgb = image_tools.resize_with_pad(rgb, 224, 224)
+    # Resize to 256x256 to match training pipeline (recording saves 256x256 JPEGs).
+    # The model's ResizeImages(224,224) transform will downscale to 224x224,
+    # giving the same interpolation path as training.
+    # Previously resized directly to 224x224, skipping the intermediate 256 step.
+    rgb = image_tools.resize_with_pad(rgb, 256, 256)
     return image_tools.convert_to_uint8(rgb)
 
 
-def _start_rgb(serial: str) -> "rs.pipeline | None":
+def _start_rgb(serial: str, *, exposure_override: str = "") -> "rs.pipeline | None":
     if FAKE_CAM or not serial:
         return None
     pipe = rs.pipeline()
     cfg = rs.config()
     cfg.enable_device(serial)
     cfg.enable_stream(rs.stream.color, RS_W, RS_H, rs.format.bgr8, RS_FPS)
-    pipe.start(cfg)
+    prof = pipe.start(cfg)
+
+    # ---- Apply and log camera settings (CUSTOM MODIFICATION) ----
+    # exposure_override allows per-camera exposure (e.g. wrist needs higher exposure)
+    exposure_val = exposure_override if exposure_override else RS_EXPOSURE
+    try:
+        for s in prof.get_device().sensors:
+            if s.get_info(rs.camera_info.name) == "RGB Camera":
+                # Apply manual exposure if configured
+                if RS_AUTO_EXPOSURE != "":
+                    s.set_option(rs.option.enable_auto_exposure, float(RS_AUTO_EXPOSURE))
+                if exposure_val != "":
+                    s.set_option(rs.option.exposure, float(exposure_val))
+
+                # Log actual settings after applying
+                ae = s.get_option(rs.option.enable_auto_exposure)
+                exp = s.get_option(rs.option.exposure)
+                gain = s.get_option(rs.option.gain)
+                intrinsics = prof.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+                print(
+                    f"Camera {serial}: {intrinsics.width}x{intrinsics.height} "
+                    f"fx={intrinsics.fx:.1f} fy={intrinsics.fy:.1f} "
+                    f"auto_exposure={ae} exposure={exp} gain={gain} fps={RS_FPS}",
+                    flush=True,
+                )
+                break
+    except Exception as e:
+        print(f"Camera {serial}: could not read/set settings: {e}", flush=True)
+
     return pipe
 
 
 def _read_rgb(pipe: "rs.pipeline") -> np.ndarray | None:
-    frames = pipe.wait_for_frames(RS_TIMEOUT_MS)
-    frame = frames.get_color_frame()
+    """Read the LATEST frame, discarding stale buffered frames.
+
+    After inference (~200ms+), the RealSense buffer may contain several old
+    frames. poll_for_frames() drains them without blocking so we always get
+    the most recent view, not one from 200ms ago.
+    """
+    frame = None
+    # Drain buffer — keep polling until empty, keeping only the latest frame
+    while True:
+        try:
+            frames = pipe.poll_for_frames()
+            f = frames.get_color_frame()
+            if f:
+                frame = f
+            else:
+                break
+        except Exception:
+            break
+    # If no frames from polling, do a blocking read
+    if frame is None:
+        frames = pipe.wait_for_frames(RS_TIMEOUT_MS)
+        frame = frames.get_color_frame()
     if not frame:
         return None
     return _process_bgr(np.asanyarray(frame.get_data()))
-
-
-class RobotiqGripperSocket:
-    """Robotiq gripper control via URCap socket service (port 63352)."""
-
-    # WRITE VARIABLES (also readable)
-    ACT = "ACT"
-    GTO = "GTO"
-    ATR = "ATR"
-    ADR = "ADR"
-    FOR = "FOR"
-    SPE = "SPE"
-    POS = "POS"
-
-    # READ VARIABLES
-    STA = "STA"  # 0 reset, 1 activating, 3 active
-    PRE = "PRE"
-    OBJ = "OBJ"
-    FLT = "FLT"
-
-    ENCODING = "UTF-8"
-
-    def __init__(self, host: str, port: int = ROBOTIQ_PORT, *, socket_timeout: float = 8.0):
-        self.host = host
-        self.port = int(port)
-        self.socket_timeout = float(socket_timeout)
-        self.socket: socket.socket | None = None
-        self._lock = threading.Lock()
-        self._rx_buf = bytearray()
-
-    def connect(self) -> None:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(self.socket_timeout)
-            s.connect((self.host, self.port))
-            self.socket = s
-        except Exception as e:
-            raise ConnectionError(f"Failed to connect to Robotiq socket at {self.host}:{self.port}: {e}") from e
-
-    def disconnect(self) -> None:
-        if self.socket is None:
-            return
-        try:
-            self.socket.close()
-        finally:
-            self.socket = None
-            self._rx_buf.clear()
-
-    def _recv_line(self) -> str:
-        """Receive a single \\n-terminated line (stripped).
-        
-        Also handles responses without newline (e.g., "ack" without \\n).
-        Uses short timeouts per recv() call to avoid blocking for full socket timeout.
-        """
-        if self.socket is None:
-            raise ConnectionError("Robotiq socket not connected")
-        
-        # Check if we already have a complete line
-        nl = self._rx_buf.find(b"\n")
-        if nl != -1:
-            line = bytes(self._rx_buf[:nl])
-            del self._rx_buf[: nl + 1]
-            return line.decode(self.ENCODING, errors="replace").strip()
-        
-        # Check if buffer contains "ack" without newline (common case)
-        if len(self._rx_buf) > 0:
-            buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-            if buf_str == "ack":
-                self._rx_buf.clear()
-                return "ack"
-        
-        # Use shorter timeout per recv() call to avoid blocking for full 8s
-        recv_timeout = 0.5  # 500ms per recv() call
-        original_timeout = self.socket.gettimeout()
-        
-        try:
-            self.socket.settimeout(recv_timeout)
-            t0 = time.time()
-            grace_period = 0.1  # 100ms grace period for newline after receiving data
-            
-            while True:
-                # Check for newline
-                nl = self._rx_buf.find(b"\n")
-                if nl != -1:
-                    line = bytes(self._rx_buf[:nl])
-                    del self._rx_buf[: nl + 1]
-                    return line.decode(self.ENCODING, errors="replace").strip()
-                
-                # Check if buffer contains "ack" (with or without newline)
-                if len(self._rx_buf) > 0:
-                    buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-                    if "ack" in buf_str:
-                        # If we have "ack" and grace period expired, return it
-                        if time.time() - t0 > grace_period:
-                            self._rx_buf.clear()
-                            return "ack"
-                
-                # Try to receive more data with short timeout
-                try:
-                    chunk = self.socket.recv(1024)
-                    if not chunk:
-                        raise ConnectionError("Robotiq socket closed by peer")
-                    self._rx_buf.extend(chunk)
-                    t0 = time.time()  # Reset grace period when we receive data
-                except socket.timeout:
-                    # If we have "ack" in buffer and timeout, return it
-                    if len(self._rx_buf) > 0:
-                        buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-                        if "ack" in buf_str:
-                            self._rx_buf.clear()
-                            return "ack"
-                    # Otherwise, raise timeout - caller can handle it
-                    raise
-        finally:
-            # Restore original timeout
-            self.socket.settimeout(original_timeout)
-
-    def _send_and_recv_line(self, cmd: str) -> str:
-        if self.socket is None:
-            raise ConnectionError("Robotiq socket not connected")
-        with self._lock:
-            self.socket.sendall(cmd.encode(self.ENCODING))
-            return self._recv_line()
-
-    @staticmethod
-    def _is_ack(line: str) -> bool:
-        """Check if response contains 'ack' (handles variations with/without newline)."""
-        return "ack" in line.strip().lower()
-
-    def _set_vars(self, var_dict: OrderedDict[str, int]) -> None:
-        # Edge-trigger fix: set GTO 0 first if GTO is in the command, then set all vars with GTO 1
-        # Do NOT call _set_var() here to avoid infinite recursion - send directly
-        if self.GTO in var_dict:
-            line0 = self._send_and_recv_line("SET GTO 0\n")
-            if not self._is_ack(line0):
-                raise RuntimeError(f"Robotiq SET GTO 0 not acknowledged: {line0!r}")
-            time.sleep(0.02)
-        
-        cmd = "SET"
-        for variable, value in var_dict.items():
-            cmd += f" {variable} {int(value)}"
-        cmd += "\n"
-        line = self._send_and_recv_line(cmd)
-        if not self._is_ack(line):
-            raise RuntimeError(f"Robotiq SET not acknowledged: {line!r}")
-
-    def _set_var(self, variable: str, value: int) -> None:
-        self._set_vars(OrderedDict([(variable, int(value))]))
-
-    def _get_var(self, variable: str) -> int:
-        line = self._send_and_recv_line(f"GET {variable}\n")
-        parts = line.split()
-        if len(parts) != 2:
-            raise RuntimeError(f"Unexpected GET response: {line!r}")
-        var_name, value_str = parts
-        if var_name != variable:
-            raise RuntimeError(f"Unexpected GET response {line!r}: expected '{variable}'")
-        return int(value_str)
-
-    def _reset(self) -> None:
-        self._set_var(self.ACT, 0)
-        self._set_var(self.ATR, 0)
-        # Wait until ACT=0 and STA=0
-        t0 = time.time()
-        while time.time() - t0 < 5.0:
-            if self._get_var(self.ACT) == 0 and self._get_var(self.STA) == 0:
-                break
-            self._set_var(self.ACT, 0)
-            self._set_var(self.ATR, 0)
-            time.sleep(0.1)  # Reduced polling frequency
-        time.sleep(0.5)
-
-    def is_active(self) -> bool:
-        return self._get_var(self.STA) == 3
-
-    def activate(self) -> None:
-        if self.is_active():
-            return
-        self._reset()
-        self._set_var(self.ACT, 1)
-        # Wait until active (STA=3)
-        t0 = time.time()
-        while time.time() - t0 < 10.0:
-            if self._get_var(self.ACT) == 1 and self._get_var(self.STA) == 3:
-                return
-            time.sleep(0.1)  # Reduced polling frequency
-        raise RuntimeError("Robotiq activation timed out (STA did not reach 3)")
-
-    def move_and_wait(self, position: int, speed: int = 128, force: int = 64) -> None:
-        position = int(np.clip(position, 0, 255))
-        speed = int(np.clip(speed, 0, 255))
-        force = int(np.clip(force, 0, 255))
-        # Send command once
-        self._set_vars(OrderedDict([(self.POS, position), (self.SPE, speed), (self.FOR, force), (self.GTO, 1)]))
-        
-        # Poll lightly with hard deadline to avoid hanging forever on blocking GETs
-        deadline = time.time() + 12.0
-        last_good_obj = None
-        consecutive_failures = 0
-        max_failures = 3  # Allow a few failures before giving up
-        
-        while time.time() < deadline:
-            try:
-                obj = self._get_var(self.OBJ)
-                last_good_obj = obj
-                consecutive_failures = 0  # Reset on success
-                # Primary completion check: OBJ == 3 (at target) or OBJ in {1,2} (stopped due to contact)
-                if obj in (1, 2, 3):
-                    return
-            except Exception:
-                # URCap not responding right now
-                consecutive_failures += 1
-                if consecutive_failures >= max_failures:
-                    # Too many failures in a row - gripper might be stuck or URCap unresponsive
-                    # If we've waited a reasonable time, assume success if no fault
-                    elapsed = time.time() - (deadline - 12.0)
-                    if elapsed > 3.0:  # After 3 seconds, if no response, assume it's working
-                        # Try one more quick check, then give up
-                        try:
-                            flt = self._get_var(self.FLT)
-                            if flt == 0:  # No fault - assume success
-                                return
-                        except Exception:
-                            pass  # Even diagnostics failed, but we've waited long enough
-            time.sleep(0.15)  # Poll every 150ms - reduced from 200ms for faster response
-        
-        # Timeout - try to get diagnostics once (but don't block forever if it fails)
-        try:
-            sta = self._get_var(self.STA)
-            flt = self._get_var(self.FLT)
-            obj = self._get_var(self.OBJ)
-            pre = self._get_var(self.PRE)
-            act = self._get_var(self.ACT)
-            gto = self._get_var(self.GTO)
-            raise RuntimeError(
-                f"Robotiq move timed out after 12s\n"
-                f"Diagnostics: STA={sta}, FLT={flt}, OBJ={obj}, PRE={pre} (target={position}), ACT={act}, GTO={gto}"
-            )
-        except Exception as diag_err:
-            # If diagnostics also fail, just report the last known OBJ value
-            raise RuntimeError(f"Robotiq move timed out. Last OBJ={last_good_obj} (diagnostics failed: {diag_err})")
-
-    def open(self) -> None:
-        self.move_and_wait(0)
-
-    def close(self) -> None:
-        self.move_and_wait(255)
-
-
-class RobotiqGripperHelper:
-    """Helper class for Robotiq gripper control via URCap socket (port 63352)."""
-    
-    def __init__(self, host: str):
-        """Initialize gripper helper.
-        
-        Args:
-            host: Robot IP address
-        """
-        self._gripper = RobotiqGripperSocket(host, ROBOTIQ_PORT)
-        self._gripper.connect()
-    
-    def activate(self) -> None:
-        """Activate the gripper.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.activate()
-    
-    def open(self) -> None:
-        """Open the gripper fully.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.open()
-    
-    def close(self) -> None:
-        """Close the gripper fully.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.close()
-    
-    def move(self, position: int) -> None:
-        """Move gripper to specific position.
-        
-        Args:
-            position: Gripper position (0-255, where 0 is fully open, 255 is fully closed)
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.move_and_wait(position)
-
-    def move_normalized(self, position_01: float) -> None:
-        """Move gripper to normalized position (0.0 = open, 1.0 = closed).
-
-        Args:
-            position_01: Gripper position normalized to [0.0, 1.0]
-        """
-        position = int(np.clip(position_01 * 255, 0, 255))
-        self.move(position)
-
-    def send_normalized(self, position_01: float, speed: int = 255, force: int = 128) -> None:
-        """Send gripper target without blocking (fire-and-forget).
-
-        Unlike move_normalized, this returns immediately so the arm can
-        keep moving while the gripper travels. Use during the control loop.
-        """
-        position = int(np.clip(position_01 * 255, 0, 255))
-        speed = int(np.clip(speed, 0, 255))
-        force = int(np.clip(force, 0, 255))
-        self._gripper._set_vars(OrderedDict([
-            (self._gripper.POS, position),
-            (self._gripper.SPE, speed),
-            (self._gripper.FOR, force),
-            (self._gripper.GTO, 1),
-        ]))
-
-    def get_position(self) -> int:
-        """Get current gripper position (0-255, where 0 is fully open, 255 is fully closed).
-        
-        Returns:
-            Current gripper position as integer (0-255)
-        """
-        return self._gripper._get_var(self._gripper.PRE)
-
-    def get_position_normalized(self) -> float:
-        """Get current gripper position normalized (0.0 = open, 1.0 = closed).
-        
-        Returns:
-            Current gripper position normalized to [0.0, 1.0]
-        """
-        pos = self.get_position()
-        return float(pos) / 255.0
-
-    def disconnect(self) -> None:
-        self._gripper.disconnect()
 
 
 def _move_to_reset_position(
@@ -557,7 +287,7 @@ def main() -> None:
     # Initialize cameras
     print("Initializing cameras...", end=" ", flush=True)
     base_cam = _start_rgb(RS_BASE)
-    wrist_cam = _start_rgb(RS_WRIST)
+    wrist_cam = _start_rgb(RS_WRIST, exposure_override=RS_WRIST_EXPOSURE)
     if base_cam is not None or wrist_cam is not None:
         print("OK")
         # Give cameras time to start streaming
@@ -580,6 +310,16 @@ def main() -> None:
     # Give websocket time to establish connection
     time.sleep(0.5)
 
+    # Optional: connect to second policy server for gripper predictions
+    gripper_client = None
+    if GRIPPER_POLICY_HOST:
+        print(f"Connecting to GRIPPER policy at {GRIPPER_POLICY_HOST}:{GRIPPER_POLICY_PORT}...", end=" ", flush=True)
+        gripper_client = websocket_client_policy.WebsocketClientPolicy(
+            host=GRIPPER_POLICY_HOST, port=GRIPPER_POLICY_PORT
+        )
+        print("OK")
+        time.sleep(0.5)
+
     # Get reset_pose from server metadata
     print("Fetching policy configuration...", end=" ", flush=True)
     metadata = client.get_server_metadata()
@@ -593,9 +333,7 @@ def main() -> None:
     if ns:
         print(f"Policy server reports: norm_stats_dir={ns!r}", flush=True)
     if reset_pose is None:
-        # Default reset position: same as dataset gathering start position
-        # (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0) degrees in radians
-        reset_pose = [-1.5708, -0.6981, -2.4435, -0.8727, 1.5708, 0.0]
+        reset_pose = [float(np.deg2rad(d)) for d in _defaults.START_POSITION_DEG]
         print("OK (using default reset position)")
     else:
         print(f"OK (reset_pose from metadata)")
@@ -611,7 +349,7 @@ def main() -> None:
     
     # Initialize gripper if enabled
     gripper: RobotiqGripperHelper | None = None
-    if USE_GRIPPER and GRIPPER_PORT == ROBOTIQ_PORT:
+    if USE_GRIPPER and GRIPPER_PORT == _defaults.ROBOTIQ_PORT:
         print("Initializing Robotiq Gripper...", end=" ", flush=True)
         try:
             gripper = RobotiqGripperHelper(UR_IP)
@@ -632,9 +370,9 @@ def main() -> None:
                 except Exception:
                     pass
                 gripper = None
-    elif GRIPPER_PORT > 0 and GRIPPER_PORT != ROBOTIQ_PORT:
-        print(f"Warning: GRIPPER_PORT={GRIPPER_PORT} is not the Robotiq port ({ROBOTIQ_PORT}).")
-        print("Gripper control disabled. Set GRIPPER_PORT={ROBOTIQ_PORT} or USE_GRIPPER=0 to disable.")
+    elif GRIPPER_PORT > 0 and GRIPPER_PORT != _defaults.ROBOTIQ_PORT:
+        print(f"Warning: GRIPPER_PORT={GRIPPER_PORT} is not the Robotiq port ({_defaults.ROBOTIQ_PORT}).")
+        print(f"Gripper control disabled. Set GRIPPER_PORT={_defaults.ROBOTIQ_PORT} or USE_GRIPPER=0 to disable.")
     else:
         print("Gripper: DISABLED")
     
@@ -676,10 +414,17 @@ def main() -> None:
     time.sleep(0.5)  # Brief pause before starting control loop
 
     max_step_rad = np.deg2rad(MAX_STEP_DEG)
-    last_gripper: float | None = None
+    # Track the last gripper *command* (not sensor feedback). Training data stores
+    # the commanded value in state[6] (see ur5_replay_and_record_raw.py g_cmd),
+    # so inference must feed the same signal back to the model. Initialize to 0.0
+    # (open) to match the recorder's default gripper_default.
+    last_gripper: float = 0.0
+    infer_step = 0
 
     try:
         while True:
+            # ---- Capture observation: images + state as close together as possible ----
+            t_capture = time.time()
             if FAKE_CAM:
                 rgb_base = np.zeros((224, 224, 3), dtype=np.uint8)
                 rgb_wrist = np.zeros((224, 224, 3), dtype=np.uint8)
@@ -696,18 +441,11 @@ def main() -> None:
                     if rgb_wrist is None:
                         rgb_wrist = rgb_base
 
+            # Read state immediately after images to minimize desync
             q = np.asarray(rcv.getActualQ(), dtype=np.float32)
-            # Read actual gripper position so the model gets correct proprioceptive feedback.
-            # Without this, state[6] is always 0.0 and the model learns action[6] ≈ state[6],
-            # meaning it never commands the gripper to close.
-            if gripper is not None:
-                try:
-                    gripper_pos = gripper.get_position_normalized()
-                except Exception:
-                    gripper_pos = last_gripper if last_gripper is not None else 0.0
-            else:
-                gripper_pos = last_gripper if last_gripper is not None else 0.0
-            state = np.concatenate([q, np.array([gripper_pos], dtype=np.float32)], axis=0)
+            # Use last commanded gripper value — matches training distribution
+            # (recorder stores g_cmd, not actual sensor feedback, in state[6]).
+            state = np.concatenate([q, np.array([last_gripper], dtype=np.float32)], axis=0)
 
             obs = {
                 "observation/image": rgb_base,
@@ -768,11 +506,57 @@ def main() -> None:
                         if _has_gui:
                             print(f"WARNING: Failed to display image: {e}", file=sys.stderr, flush=True)
             
+            # ---- Image diagnostics on first step (CUSTOM MODIFICATION) ----
+            if infer_step == 0:
+                print(
+                    f"Image diagnostics (step 0):\n"
+                    f"  base:  shape={rgb_base.shape} dtype={rgb_base.dtype} mean={rgb_base.mean():.1f} std={rgb_base.std():.1f}\n"
+                    f"  wrist: shape={rgb_wrist.shape} dtype={rgb_wrist.dtype} mean={rgb_wrist.mean():.1f} std={rgb_wrist.std():.1f}\n"
+                    f"  state: {state}",
+                    flush=True,
+                )
+
+            t_infer_start = time.time()
             out = client.infer(obs)
+
+            # Override gripper with second policy if configured
+            if gripper_client is not None:
+                grip_out = gripper_client.infer(obs)
+                grip_actions = np.asarray(grip_out["actions"], dtype=np.float32)
+                if grip_actions.ndim == 1:
+                    grip_actions = grip_actions[None, :]
+
+            t_infer_end = time.time()
             actions = np.asarray(out["actions"], dtype=np.float32)
             if actions.ndim == 1:
                 actions = actions[None, :]
             actions = actions[:, :7]
+
+            if gripper_client is not None:
+                actions[:, 6] = grip_actions[:actions.shape[0], 6]
+
+            print(
+                f"--- chunk: {actions.shape} joints_range=[{actions[:,:6].min():.4f}, {actions[:,:6].max():.4f}] "
+                f"gripper_range=[{actions[:,6].min():.3f}, {actions[:,6].max():.3f}] "
+                f"t_capture={t_infer_start - t_capture:.3f}s t_infer={t_infer_end - t_infer_start:.3f}s",
+                flush=True,
+            )
+
+            # ---- Save observation + actions for offline replay (CUSTOM MODIFICATION) ----
+            # To revert: unset RECORD_DIR.
+            if RECORD_DIR:
+                rec_dir = os.path.join(RECORD_DIR)
+                os.makedirs(rec_dir, exist_ok=True)
+                np.savez_compressed(
+                    os.path.join(rec_dir, f"step_{infer_step:04d}.npz"),
+                    image=rgb_base,
+                    wrist_image=rgb_wrist,
+                    state=state,
+                    actions=actions,
+                    prompt=np.array(PROMPT),
+                )
+
+            infer_step += 1
 
             for a in actions[:HORIZON_STEPS]:
                 dq = np.asarray(a[:6], dtype=np.float32)
@@ -781,8 +565,13 @@ def main() -> None:
                 else:
                     q_tgt = q + np.clip(dq, -max_step_rad, max_step_rad)
 
-                g = float(a[6])
-                if last_gripper is None or abs(g - last_gripper) > GRIPPER_DEBOUNCE:
+                g_raw = float(a[6])
+                g = float(np.clip(g_raw, 0.0, 1.0))
+                if GRIPPER_THRESHOLD != "":
+                    g = 1.0 if g >= float(GRIPPER_THRESHOLD) else 0.0
+                delta = dq - q if ACTION_MODE == "absolute" else dq
+                print(f"joints delta={np.array2string(delta, precision=4, suppress_small=True)} gripper={g_raw:.3f}", flush=True)
+                if abs(g - last_gripper) > GRIPPER_DEBOUNCE:
                     if not DRY_RUN and gripper is not None:
                         try:
                             # Non-blocking: send target and let gripper move while arm continues.
@@ -801,6 +590,7 @@ def main() -> None:
                     ctrl.servoJ(q_tgt.tolist(), VEL, ACC, DT, LOOKAHEAD, GAIN)
                     time.sleep(DT)
                 q = np.asarray(rcv.getActualQ(), dtype=np.float32)
+
     finally:
         try:
             ctrl.speedStop()

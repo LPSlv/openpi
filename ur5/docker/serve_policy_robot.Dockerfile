@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -y \
     git git-lfs linux-headers-generic build-essential clang \
     curl wget ca-certificates xz-utils pkg-config \
     nasm yasm autoconf automake libtool \
-    libgl1 libglib2.0-0 libusb-1.0-0 \
+    libgfortran5 libgl1 libglib2.0-0 libusb-1.0-0 \
     libxext6 libxrender1 libsm6 \
     libgtk-3-0 libgdk-pixbuf2.0-0 \
     libxkbcommon-x11-0 \
@@ -103,22 +103,13 @@ RUN /.venv/bin/python -c "import transformers, os; print(os.path.dirname(transfo
 RUN /.venv/bin/python -m ensurepip --upgrade && \
     /.venv/bin/python -m pip install --no-cache-dir -U pip setuptools wheel
 
-# Install packages separately for better debugging and caching
-# Install numpy first (dependency for others) - ensure it's installed even if uv sync missed it
-RUN /.venv/bin/python -m pip install --no-cache-dir "numpy<2.0.0" && \
-    /.venv/bin/python -c "import numpy; print(f'✓ numpy {numpy.__version__} installed')"
-
 # Install opencv-python (GUI build).
 # Note: our lockfile also includes opencv-python-headless; if both are installed, whichever was installed last
 # typically "wins" the `cv2` module. We explicitly remove headless variants first so `cv2.imshow` works.
-# IMPORTANT: pin opencv-python to a NumPy<2 compatible build. Newer opencv-python releases pull NumPy>=2,
-# which conflicts with openpi-client's NumPy<2 requirement.
-#
-# Also: ensure a clean OpenCV install (uv sync may bring in opencv-python-headless via other deps).
 RUN /.venv/bin/python -m pip uninstall -y \
       opencv-python opencv-contrib-python opencv-python-headless opencv-contrib-python-headless \
     || true
-RUN /.venv/bin/python -m pip install --no-cache-dir "numpy<2.0.0" "opencv-python==4.11.0.86" && \
+RUN /.venv/bin/python -m pip install --no-cache-dir "opencv-python==4.11.0.86" && \
     /.venv/bin/python - <<'PY'
 import numpy
 import cv2
@@ -162,6 +153,14 @@ RUN echo "Installing pyrealsense2 (this may take several minutes)..." && \
 # All packages are now installed in the venv, so PYTHONPATH should only include venv paths
 
 ENV PATH=/.venv/bin:$PATH
+# Ensure ur5 package is importable (bind-mounted at /app at runtime)
+ENV PYTHONPATH=/app
+
+# JAX platform configuration
+# By default, JAX will auto-detect and use CUDA if available
+# To force CPU mode (e.g., if GPU is not accessible), set JAX_PLATFORMS=cpu when running the container
+# Example: docker run -e JAX_PLATFORMS=cpu ...
+# ENV JAX_PLATFORMS=cpu  # Uncomment this line to force CPU mode by default
 
 # Safer defaults for OpenCV HighGUI inside Docker/X11:
 # - disable MIT-SHM (often causes "X11 connection broke" in containers)
@@ -181,22 +180,36 @@ ENV QT_QPA_PLATFORM_PLUGIN_PATH=/.venv/lib/python3.11/site-packages/cv2/qt/plugi
 
 # Policy server arguments (see scripts/serve_policy.py for options)
 # Default to UR5 environment mode for robot control with local checkpoint
-ENV SERVER_ARGS="policy:checkpoint --policy.config=pi05_ur5 --policy.dir=checkpoints/pi05_ur5/ur5_fifth_1/499"
+ENV SERVER_ARGS="policy:checkpoint --policy.config=pi05_ur5_blueblock10 --policy.dir=checkpoints/pi05_ur5_blueblock10/pi05_ur5_blueblock10-1/150"
 
 # Seconds to wait for policy server to start before launching robot bridge
 ENV SERVER_WAIT=6
 
 # Robot configuration
 ENV UR_IP="192.10.0.11"
-ENV RS_BASE=""
-ENV RS_WRIST=""
+ENV RS_BASE="137322074310"
+ENV RS_WRIST="137322075008"
 
-# Language instruction for the policy
-ENV PROMPT="pick up the grey shaker bottle"
+# Language instruction for the policy (override with -e PROMPT="...")
+ENV PROMPT="Pick up the blue block and place it in the cardboard box"
+
+# Camera exposure (match recording: fixed exposure=100, auto off)
+ENV RS_AUTO_EXPOSURE="0"
+ENV RS_EXPOSURE="100"
+ENV RS_WRIST_EXPOSURE="150"
+
+# Inference settings
+ENV HOLD_PER_STEP="0.1"
+ENV HORIZON_STEPS="6"
+ENV MAX_STEP_DEG="3.0"
+ENV DT="0.02"
+ENV VEL="0.5"
+ENV ACC="0.5"
+ENV LOOKAHEAD="0.1"
+ENV GAIN="300"
 
 # Robot control defaults
 ENV DRY_RUN="0"
 
 # Start policy server in background, wait for it to initialize, then run robot bridge
-# The robot bridge connects to the policy server via websocket at localhost:8000
-CMD ["/bin/bash","-lc","uv run scripts/serve_policy.py $SERVER_ARGS & sleep ${SERVER_WAIT:-5}; python /app/local/utils/pi0_bridge_ur5_headless.py"]
+CMD ["/bin/bash","-lc","uv run scripts/serve_policy.py $SERVER_ARGS & sleep ${SERVER_WAIT:-6}; python /app/ur5/utils/pi0_bridge_ur5_headless.py"]

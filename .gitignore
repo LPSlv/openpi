@@ -6,6 +6,8 @@ wandb/
 raw_episodes/
 raw_episodes_*/
 openpi_ckpt_*/
+ckpt_ur5_*/
+.venv-robot/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

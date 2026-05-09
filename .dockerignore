@@ -1,3 +1,7 @@
 .venv
 checkpoints
 data
+venv_ur5
+ckpt_ur5_*
+raw_episodes*
+wandb

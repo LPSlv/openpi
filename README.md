@@ -1,26 +1,127 @@
 # UR5 Fork of OpenPI
 
 > This is a fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi)
-> adapted for **UR5e robot arm** research. All UR5-specific code, scripts, and
-> documentation live under [`ur5/`](ur5/README.md).
+> adapted for **UR5e robot arm** research. UR5-related code is **not all under `ur5/`** —
+> changes also touch the core training, model, and serving paths inside `src/openpi/`,
+> plus several entry-point scripts and example folders. This README is a complete map of
+> where to look.
 
-## UR5 Quick Links
+## Top-level orientation
 
-| What | Where |
-|------|-------|
-| UR5 overview and directory map | [`ur5/README.md`](ur5/README.md) |
-| Getting started from scratch | [`ur5/docs/quickstart.md`](ur5/docs/quickstart.md) |
-| Data recording pipeline | [`ur5/docs/data_pipeline.md`](ur5/docs/data_pipeline.md) |
-| Training guide | [`ur5/docs/training.md`](ur5/docs/training.md) |
-| Docker deployment | [`ur5/docs/deployment.md`](ur5/docs/deployment.md) |
-| Experiment lab notebook | [`ur5/docs/experiments.md`](ur5/docs/experiments.md) |
-| Research report | [`ur5/docs/research_report.md`](ur5/docs/research_report.md) |
+| Start here | What it covers |
+|------------|----------------|
+| [`ur5/README.md`](ur5/README.md)                     | Directory layout of the UR5 hardware integration and scripts |
+| [`ur5/docs/quickstart.md`](ur5/docs/quickstart.md)   | End-to-end setup from blank machine |
+| [`ur5/docs/training.md`](ur5/docs/training.md)       | Training pipeline, configs, norm stats |
+| [`ur5/docs/deployment.md`](ur5/docs/deployment.md)   | Docker policy-server + robot-bridge deployment |
+| [`ur5/docs/experiments.md`](ur5/docs/experiments.md) | Per-experiment lab notebook and decisions |
+| [`ur5/docs/final_evaluations.md`](ur5/docs/final_evaluations.md) | Final evaluation runs and results |
+| [`ur5/charts/`](ur5/charts/)                         | Evaluation plots (timing, dataset size, ID/OOD) |
 
-### UR5-specific source files in the OpenPI tree
+## Where every UR5 change lives
 
-- [`src/openpi/policies/ur5_policy.py`](src/openpi/policies/ur5_policy.py) -- UR5Inputs / UR5Outputs transforms
-- [`src/openpi/training/config.py`](src/openpi/training/config.py) -- UR5 training configs (`pi0_ur5`, `pi05_ur5`, etc.)
-- [`examples/ur5/`](examples/ur5/) -- example environment, inference entry point, and README
+### 1. UR5 hardware & runtime — `ur5/` (new directory)
+
+| Path | Purpose |
+|------|---------|
+| [`ur5/utils/pi0_bridge_ur5_headless.py`](ur5/utils/pi0_bridge_ur5_headless.py) | Inference bridge: RealSense capture + RTDE robot control + Robotiq gripper + websocket policy client |
+| [`ur5/utils/rtde_utils.py`](ur5/utils/rtde_utils.py) | Wrappers around UR5e RTDE control / receive interfaces |
+| [`ur5/utils/robotiq_gripper.py`](ur5/utils/robotiq_gripper.py) | Robotiq 2F gripper control via URCap socket (port 63352) |
+| [`ur5/defaults.py`](ur5/defaults.py) | Hardware defaults (robot IP, camera serials, joint limits) |
+| [`ur5/scripts/`](ur5/scripts/) | Recording, conversion, smoothing, evaluation, diagnostics scripts (see [`ur5/scripts/README.md`](ur5/scripts/README.md)) |
+| [`ur5/scripts/hpc/`](ur5/scripts/hpc/) | Slurm + Singularity job scripts for cluster training |
+| [`ur5/test/`](ur5/test/) | Hardware sanity tests (cameras, RTDE read, joint motion) |
+| [`ur5/docker/serve_policy_robot.Dockerfile`](ur5/docker/serve_policy_robot.Dockerfile) | GPU Docker image for combined policy server + robot bridge |
+| [`ur5/docs/`](ur5/docs/) | All thesis-side documentation, including `papers/` PDFs |
+| [`ur5/charts/`](ur5/charts/) | Evaluation figures (PDF + PNG) generated from `eval_charts.ipynb` |
+
+### 2. UR5 example app — `examples/ur5/`
+
+| Path | Status | Purpose |
+|------|--------|---------|
+| [`examples/ur5/main.py`](examples/ur5/main.py)         | new | Example inference entry point |
+| [`examples/ur5/env.py`](examples/ur5/env.py)           | new | Example environment wrapper |
+| [`examples/ur5/real_env.py`](examples/ur5/real_env.py) | new | Real-hardware env (cameras + RTDE) |
+| [`examples/ur5/README.md`](examples/ur5/README.md)     | modified | UR5 example overview |
+
+### 3. UR5 policy code — `src/openpi/policies/`
+
+| Path | Status | Purpose |
+|------|--------|---------|
+| [`src/openpi/policies/ur5_policy.py`](src/openpi/policies/ur5_policy.py)           | new | `UR5Inputs` / `UR5Outputs` transforms (image normalization, joint+gripper packing/slicing) |
+| [`src/openpi/policies/ur5_policy_test.py`](src/openpi/policies/ur5_policy_test.py) | new | Unit tests for the UR5 transforms |
+
+### 4. Training configs — `src/openpi/training/config.py` (modified)
+
+Adds `LeRobotUR5DataConfig` plus a family of UR5 training configs:
+`pi0_ur5`, `pi05_ur5`, `pi05_ur5_blueblock10`, `pi0_ur5_ffer_merged`,
+`pi0_ur5_ffer_then_mine`, `pi0_ur5_frozen_vision`, etc. See the file for the full list.
+
+Key knobs added: dataset repack mappings (`_DEFAULT_REPACK`, `FFER_REPACK`),
+`use_delta_action_transform`, gripper oversampling, dataset asset-id overrides.
+
+### 5. Core model & training adaptations — `src/openpi/`
+
+These are upstream-tree files modified to support UR5 training/inference. Each diff is
+gated behind a config option so the upstream behaviour is preserved when the option is unset.
+
+| Path | What changed |
+|------|--------------|
+| [`src/openpi/models/pi0_config.py`](src/openpi/models/pi0_config.py) | Added `action_dim_weights` for per-dimension flow-matching loss weighting (used to upweight gripper transitions) |
+| [`src/openpi/models/model.py`](src/openpi/models/model.py)           | `compute_loss` now returns `(loss, diagnostics)` so per-dim losses can be logged |
+| [`src/openpi/models/model_test.py`](src/openpi/models/model_test.py) | Test updates matching the new `compute_loss` signature |
+| [`src/openpi/models/pi0.py`](src/openpi/models/pi0.py)               | Per-dimension loss diagnostics + optional weighted loss |
+| [`src/openpi/models/pi0_fast.py`](src/openpi/models/pi0_fast.py)     | Matching `compute_loss` signature update |
+| [`src/openpi/models_pytorch/pi0_pytorch.py`](src/openpi/models_pytorch/pi0_pytorch.py) | PyTorch-side adjustments |
+| [`src/openpi/models_pytorch/gemma_pytorch.py`](src/openpi/models_pytorch/gemma_pytorch.py) | PyTorch-side adjustments |
+| [`src/openpi/transforms.py`](src/openpi/transforms.py) | `Unnormalize` handles the case where pretrained norm-stats vector is wider than the runtime action dim (slice instead of pad) |
+| [`src/openpi/training/data_loader.py`](src/openpi/training/data_loader.py) | (a) Migrated import to `lerobot.datasets.lerobot_dataset` (LeRobot v3); (b) added `_compute_gripper_oversample_weights` for transition-aware sampling; (c) lerobot v3 task-table conversion fix |
+| [`src/openpi/training/checkpoints.py`](src/openpi/training/checkpoints.py) | Bumped `max_to_keep` from 1 → 10 so multiple training checkpoints are retained for evaluation |
+| [`src/openpi/shared/download.py`](src/openpi/shared/download.py)     | Force-redownload semantics around `gs://openpi-assets`; routes that bucket through `gsutil` to avoid gcsfs auth issues |
+
+### 6. Entry-point scripts — `scripts/`
+
+| Path | What changed |
+|------|--------------|
+| [`scripts/train.py`](scripts/train.py)                          | Per-dimension gradient-norm logging on `action_out_proj`; batch-level gripper-transition monitoring; early-stopping based on patience/min-delta from the train config |
+| [`scripts/serve_policy.py`](scripts/serve_policy.py)            | Surfaces resolved checkpoint config + `model_type`, `action_horizon`, `action_dim` in policy metadata so clients can auto-configure |
+| [`scripts/compute_norm_stats.py`](scripts/compute_norm_stats.py)| Writes norm stats to `<assets_dir>/<asset_id>` (the path the loader actually reads) instead of `<repo_id>`, with a back-compat copy under the legacy path |
+| [`scripts/docker/train.Dockerfile`](scripts/docker/train.Dockerfile)   | new — training Docker image |
+| [`scripts/docker/compose_train.yml`](scripts/docker/compose_train.yml) | new — compose file for training |
+
+### 7. Serving / websocket — `src/openpi/serving/` and client
+
+| Path | What changed |
+|------|--------------|
+| [`src/openpi/serving/websocket_policy_server.py`](src/openpi/serving/websocket_policy_server.py) | Disabled keepalive pings for long inference; `policy.infer` runs in a thread so the server keeps responding to control frames |
+| [`packages/openpi-client/src/openpi_client/websocket_client_policy.py`](packages/openpi-client/src/openpi_client/websocket_client_policy.py) | Matching client-side adjustments |
+
+### 8. Other examples — LeRobot v3 conversion fixes
+
+| Path | What changed |
+|------|--------------|
+| [`examples/aloha_real/convert_aloha_data_to_lerobot.py`](examples/aloha_real/convert_aloha_data_to_lerobot.py) | LeRobot v3 import / API update |
+| [`examples/droid/convert_droid_data_to_lerobot.py`](examples/droid/convert_droid_data_to_lerobot.py) | Same |
+| [`examples/libero/convert_libero_data_to_lerobot.py`](examples/libero/convert_libero_data_to_lerobot.py) | Same |
+| [`examples/droid/README_train.md`](examples/droid/README_train.md) | Doc tweaks |
+
+### 9. Repo configuration
+
+| Path | What changed |
+|------|--------------|
+| [`pyproject.toml`](pyproject.toml) | Pin LeRobot to v3 (and other dep adjustments) |
+| [`uv.lock`](uv.lock) | Refreshed for the v3 pin |
+| [`packages/openpi-client/pyproject.toml`](packages/openpi-client/pyproject.toml) | Client-side dep adjustments |
+| [`.pre-commit-config.yaml`](.pre-commit-config.yaml) | Excludes `ur5/` and `examples/ur5/` from lint (research scripts) |
+| [`.gitignore`](.gitignore), [`.dockerignore`](.dockerignore) | Ignore venvs and local artifacts |
+
+### How to see the full diff vs upstream
+
+```bash
+git fetch upstream
+git diff --stat upstream/main..main          # one-line summary per file
+git log --oneline upstream/main..main        # commits added by this fork
+```
 
 ---
 

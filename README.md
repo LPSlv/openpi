@@ -2,7 +2,7 @@
 
 A fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi)
 that adapts the pi0 / pi0.5 / pi0-FAST vision-language-action models to a new
-embodiment (a Universal Robots UR5e arm with a Robotiq 2F gripper) and studies
+embodiment (a Universal Robots UR5e arm with a Robotiq Hand-E gripper) and studies
 how well the resulting policy generalizes to scenes outside its training data.
 
 ## Research context
@@ -54,7 +54,7 @@ below map every file that differs from upstream.
 |------|---------|
 | [`ur5/utils/pi0_bridge_ur5_headless.py`](ur5/utils/pi0_bridge_ur5_headless.py) | Inference bridge: RealSense capture + RTDE robot control + Robotiq gripper + websocket policy client |
 | [`ur5/utils/rtde_utils.py`](ur5/utils/rtde_utils.py) | Wrappers around UR5e RTDE control / receive interfaces |
-| [`ur5/utils/robotiq_gripper.py`](ur5/utils/robotiq_gripper.py) | Robotiq 2F gripper control via URCap socket (port 63352) |
+| [`ur5/utils/robotiq_gripper.py`](ur5/utils/robotiq_gripper.py) | Robotiq Hand-E gripper control via URCap socket (port 63352) |
 | [`ur5/defaults.py`](ur5/defaults.py) | Hardware defaults (robot IP, camera serials, joint limits) |
 | [`ur5/scripts/`](ur5/scripts/) | Recording, conversion, evaluation, and diagnostics scripts |
 | [`ur5/test/`](ur5/test/) | Hardware sanity tests (camera list, dual-camera preview) |
@@ -86,68 +86,12 @@ Adds `LeRobotUR5DataConfig` plus the UR5 training configs:
 Key knobs added: `use_delta_action_transform`, `gripper_oversample_factor`,
 dataset asset-id overrides.
 
-### 5. Core model and training adaptations: `src/openpi/`
-
-Each of these is gated behind a config option, so upstream behaviour is
-preserved when the option is unset.
-
-| Path | What changed |
-|------|--------------|
-| [`src/openpi/models/pi0_config.py`](src/openpi/models/pi0_config.py) | added `action_dim_weights` for per-dimension flow-matching loss weighting (upweight rare gripper transitions) |
-| [`src/openpi/models/model.py`](src/openpi/models/model.py) | `compute_loss` now returns `(loss, diagnostics)` so per-dim losses can be logged |
-| [`src/openpi/models/model_test.py`](src/openpi/models/model_test.py) | tests adjusted for the new `compute_loss` signature |
-| [`src/openpi/models/pi0.py`](src/openpi/models/pi0.py) | per-dimension loss diagnostics and optional weighted loss |
-| [`src/openpi/models/pi0_fast.py`](src/openpi/models/pi0_fast.py) | matching `compute_loss` signature update |
-| [`src/openpi/models_pytorch/pi0_pytorch.py`](src/openpi/models_pytorch/pi0_pytorch.py) | small adjustment on the pytorch side |
-| [`src/openpi/models_pytorch/gemma_pytorch.py`](src/openpi/models_pytorch/gemma_pytorch.py) | small adjustment on the pytorch side |
-| [`src/openpi/transforms.py`](src/openpi/transforms.py) | `Unnormalize` slices instead of pads when the pretrained norm-stats vector is wider than the runtime action dim |
-| [`src/openpi/training/data_loader.py`](src/openpi/training/data_loader.py) | migrated to `lerobot.datasets.lerobot_dataset` (v3), added `_compute_gripper_oversample_weights` for transition-aware sampling, fixed the v3 task-table conversion |
-| [`src/openpi/training/checkpoints.py`](src/openpi/training/checkpoints.py) | bumped `max_to_keep` from 1 to 10 so several checkpoints are retained for evaluation sweeps |
-| [`src/openpi/shared/download.py`](src/openpi/shared/download.py) | routes `gs://openpi-assets` through `gsutil` to sidestep gcsfs auth issues, with force-redownload semantics |
-
-### 6. Entry-point scripts: `scripts/`
-
-| Path | What changed |
-|------|--------------|
-| [`scripts/train.py`](scripts/train.py) | per-dimension gradient-norm logging on `action_out_proj`, batch-level gripper-transition fraction, optional early stopping driven by `early_stop_patience` / `early_stop_min_delta` on the train config |
-| [`scripts/serve_policy.py`](scripts/serve_policy.py) | surfaces resolved checkpoint config plus `model_type`, `action_horizon`, `action_dim` in policy metadata so clients can auto-configure |
-| [`scripts/compute_norm_stats.py`](scripts/compute_norm_stats.py) | writes norm stats to `<assets_dir>/<asset_id>` (the path the loader actually reads) instead of `<repo_id>`, with a back-compat copy under the legacy path |
-| [`scripts/docker/train.Dockerfile`](scripts/docker/train.Dockerfile) | new training Docker image |
-| [`scripts/docker/compose_train.yml`](scripts/docker/compose_train.yml) | new compose file for training |
-
-### 7. Serving and websocket client
+### 5. Serving and websocket client
 
 | Path | What changed |
 |------|--------------|
 | [`src/openpi/serving/websocket_policy_server.py`](src/openpi/serving/websocket_policy_server.py) | keepalive pings disabled (inference can take longer than the default), and `policy.infer` runs in a thread so the server keeps servicing control frames |
 | [`packages/openpi-client/src/openpi_client/websocket_client_policy.py`](packages/openpi-client/src/openpi_client/websocket_client_policy.py) | matching client-side adjustments |
-
-### 8. Other examples: LeRobot v3 conversion fixes
-
-| Path | What changed |
-|------|--------------|
-| [`examples/aloha_real/convert_aloha_data_to_lerobot.py`](examples/aloha_real/convert_aloha_data_to_lerobot.py) | LeRobot v3 import / API update |
-| [`examples/droid/convert_droid_data_to_lerobot.py`](examples/droid/convert_droid_data_to_lerobot.py) | same |
-| [`examples/libero/convert_libero_data_to_lerobot.py`](examples/libero/convert_libero_data_to_lerobot.py) | same |
-| [`examples/droid/README_train.md`](examples/droid/README_train.md) | doc tweaks |
-
-### 9. Repo configuration
-
-| Path | What changed |
-|------|--------------|
-| [`pyproject.toml`](pyproject.toml) | pin LeRobot to v3 plus a few dependency adjustments |
-| [`uv.lock`](uv.lock) | refreshed for the v3 pin |
-| [`packages/openpi-client/pyproject.toml`](packages/openpi-client/pyproject.toml) | client-side dependency adjustments |
-| [`.pre-commit-config.yaml`](.pre-commit-config.yaml) | excludes `ur5/` and `examples/ur5/` from lint (research scripts) |
-| [`.gitignore`](.gitignore), [`.dockerignore`](.dockerignore) | ignore venvs and local artifacts |
-
-### How to see the full diff vs upstream
-
-```bash
-git fetch upstream
-git diff --stat upstream/main..main          # one-line summary per file
-git log --oneline upstream/main..main        # commits added by this fork
-```
 
 ---
 

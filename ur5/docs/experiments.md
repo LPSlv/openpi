@@ -542,7 +542,7 @@ Conversion script: ur5/scripts/combine_and_split_ur5_datasets.py
 | LPSlvlv/ur5_blueblock_box_15 | 15 | 11,760 | 19.6 min |
 | LPSlvlv/ur5_blueblock_box_20 | 20 | 15,546 | 25.9 min |
 
-All datasets: 10Hz, absolute actions, forward-looking (action[i] = state[i+1]), 256x256 RGB base + wrist images, 7-dim state/action (6 joints + 1 gripper). Task prompt: "pick up the blue block and place it in the cardboard box". Robot: UR5e with Robotiq 2F gripper. LeRobot v3 format. Pushed to HuggingFace Hub under LPSlvlv org.
+All datasets: 10Hz, absolute actions, forward-looking (action[i] = state[i+1]), 256x256 RGB base + wrist images, 7-dim state/action (6 joints + 1 gripper). Task prompt: "pick up the blue block and place it in the cardboard box". Robot: UR5e with Robotiq Hand-E gripper. LeRobot v3 format. Pushed to HuggingFace Hub under LPSlvlv org.
 
 Training configs in config.py (pi0_ur5, pi05_ur5, pi05_ur5_low_mem_finetune, etc.) can use these by setting repo_id to any of the above dataset names. use_delta_action_transform=True converts absolute actions to deltas during training and back to absolute during inference.
 

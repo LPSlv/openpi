@@ -1,58 +1,59 @@
 # UR5 Integration for OpenPI
 
-This directory contains all UR5-specific code for the OpenPI fork: robot control,
-data collection, Docker deployment, hardware diagnostics, and HPC training scripts.
-
-## Directory Structure
+UR5-specific code: robot control, data collection, Docker deployment,
+diagnostics, and the docs that go with them.
 
 ```
 ur5/
+  defaults.py                       hardware defaults (UR_IP, camera serials, gripper port)
   docker/
-    serve_policy_robot.Dockerfile     GPU Docker image: policy server + robot bridge
-  scripts/
-    ur5_record_freedrive_waypoints.py Step 1: record sparse waypoints in freedrive
-    ur5_replay_and_record_raw.py      Step 2: replay waypoints, record dataset at 10 Hz
-    convert_ur5_raw_to_lerobot.py     Step 3: convert raw episodes to LeRobot format
-    convert_raw_deltas_to_absolute.py Utility: migrate old delta actions to absolute
-    download_checkpoints.py           Build-time checkpoint download helper
-    ur5e_diagnostics.py               Hardware diagnostics and norm stats verification
-    fix_opencv.sh                     Docker OpenCV reinstall helper
-    README.md                         Operational notes, training commands, FFmpeg guide
+    serve_policy_robot.Dockerfile   inference image (policy server + robot bridge)
   utils/
-    pi0_bridge_ur5_headless.py        Main inference bridge (RealSense + RTDE + websocket)
+    pi0_bridge_ur5_headless.py      inference bridge (RealSense + RTDE + websocket)
+    rtde_utils.py                   RTDE helpers shared by recording + bridge
+    robotiq_gripper.py              Robotiq URCap socket client (port 63352)
+  scripts/
+    ur5_record_freedrive_waypoints.py    1. record sparse waypoints in freedrive
+    ur5_replay_and_record_raw.py         2. replay waypoints + record episode at 10 Hz
+    convert_ur5_raw_to_lerobot.py        3. convert raw episodes to LeRobot format
+    convert_raw_deltas_to_absolute.py    one-shot: migrate old delta datasets
+    combine_and_split_ur5_datasets.py    build nested ablation datasets
+    download_checkpoints.py              docker build-time checkpoint helper
+    fix_opencv.sh                        docker OpenCV reinstall helper
+    ur5e_diagnostics.py                  UR5e hardware sanity over SSH
+    test_gripper_diagnostics.py          gripper transform / norm-stats / inference probe
+    eval_generalization.py               sweep checkpoints, score gripper response
+    verify_data_pipeline.py              trace gripper through every transform stage
+    compare_training_vs_inference_images.py   side-by-side dataset vs robot frames
+    replay_inference_recording.py        offline replay of recorded inference
   test/
-    rs_list.py                        List connected RealSense cameras
-    camera_test.py                    Dual-camera live preview
-    README.md                         Test scripts setup guide
+    rs_list.py                      list connected RealSense cameras
+    camera_test.py                  dual-camera live preview
+    README.md                       hardware test setup
+  charts/                           evaluation figures (PDF + PNG, eval_charts.ipynb)
   docs/
-    quickstart.md                     Getting started from scratch
-    data_pipeline.md                  Full data recording and conversion workflow
-    training.md                       Training guide (norm stats, configs, HPC)
-    deployment.md                     Docker build, run, and env var reference
-    experiments.md                    Lab notebook / experiment log
-    research_report.md                System research report
-    ur5e_boot_failure_report.md       Hardware troubleshooting
-    ur5e_boot_failure_diagnostic_D7.md
-    papers/
-      pi0.pdf                         Pi0 model paper
-      pi05.pdf                        Pi0.5 model paper
+    quickstart.md                   end-to-end workflow (start here)
+    training.md                     training configs, commands, lessons
+    deployment.md                   docker bridge + env var reference
+    experiments.md                  lab notebook
+    final_evaluations.md            formal evaluation results
+    papers/                         pi0.pdf, pi05.pdf
 ```
 
-## Related Files in the Main OpenPI Tree
+## UR5 files that live in the upstream openpi tree
 
-These files follow the upstream project's conventions and live alongside other robot
-policies/configs:
+These follow the upstream project's conventions:
 
-- `src/openpi/policies/ur5_policy.py` -- model I/O transforms (UR5Inputs, UR5Outputs)
-- `src/openpi/training/config.py` -- training configs (search for `ur5`)
-- `examples/ur5/` -- example environment, inference entry point, and README
+- [`src/openpi/policies/ur5_policy.py`](../src/openpi/policies/ur5_policy.py) — UR5Inputs / UR5Outputs transforms
+- [`src/openpi/training/config.py`](../src/openpi/training/config.py) — UR5 train configs (search for `ur5`)
+- [`examples/ur5/`](../examples/ur5/) — upstream-style runtime example and API tutorial
 
-## Workflow Overview
+## Workflow
 
-1. **Record** sparse waypoints in freedrive mode ([data_pipeline.md](docs/data_pipeline.md))
-2. **Replay** waypoints while recording images + proprio at 10 Hz
-3. **Convert** raw episodes to LeRobot format, push to Hugging Face
-4. **Train** on HPC or locally ([training.md](docs/training.md))
-5. **Deploy** via Docker on the robot workstation ([deployment.md](docs/deployment.md))
+1. **record** sparse waypoints in freedrive mode
+2. **replay** the waypoints while capturing images and proprio
+3. **convert** to LeRobot format and (optionally) push to Hugging Face
+4. **train** on the resulting dataset
+5. **deploy** the policy server + bridge on the robot workstation
 
-See [quickstart.md](docs/quickstart.md) to get started from scratch.
+Start at [quickstart.md](docs/quickstart.md).

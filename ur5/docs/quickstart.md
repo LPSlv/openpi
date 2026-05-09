@@ -1,110 +1,147 @@
-# UR5 Quickstart Guide
+# UR5 Quickstart
+
+End-to-end workflow: record a dataset, train, deploy on the robot.
 
 ## Prerequisites
 
-**Hardware:**
-- UR5e robot arm, powered on, in Remote Control mode
-- 1-2 Intel RealSense D400-series cameras (USB 3.0)
-- Linux workstation with NVIDIA GPU (RTX 4090+ for inference, A100/H100 for training)
-
-**Software:**
+- UR5e in Remote Control mode
+- 1-2 Intel RealSense D400 cameras (USB 3.0)
+- Linux workstation with NVIDIA GPU
 - Docker + nvidia-container-toolkit
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
+- [uv](https://docs.astral.sh/uv/)
 
-## 1. Clone and Set Up
+## 1. Setup
 
 ```bash
 git clone --recurse-submodules <your-fork-url>
 cd openpi
 GIT_LFS_SKIP_SMUDGE=1 uv sync
 GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
-```
-
-## 2. Verify Hardware
-
-Activate the environment and install hardware-specific packages:
-
-```bash
 source .venv/bin/activate
 uv pip install pyrealsense2 ur-rtde numpy opencv-python
 ```
 
-List connected cameras:
+For tasks that don't need the ML stack (recording, replay, hardware tests):
+
 ```bash
-python ur5/test/rs_list.py
+python3 -m venv .venv-robot
+source .venv-robot/bin/activate
+pip install numpy ur-rtde tyro opencv-python pyrealsense2
 ```
 
-Verify the cameras stream:
+## 2. Verify hardware
+
 ```bash
-python ur5/test/camera_test.py
+python ur5/test/rs_list.py        # list connected cameras
+python ur5/test/camera_test.py    # live preview
 ```
 
-## 3. Record Your First Dataset
-
-See [data_pipeline.md](data_pipeline.md) for the full recording workflow:
+## 3. Record a dataset
 
 ```bash
-# Step 1: Record waypoints in freedrive
-uv run python ur5/scripts/ur5_record_freedrive_waypoints.py \
-  --ur_ip 192.10.0.11 --prompt "pick up the block" --out_dir raw_episodes
+# step 1: record sparse waypoints in freedrive
+python ur5/scripts/ur5_record_freedrive_waypoints.py \
+  --ur_ip 192.10.0.11 \
+  --prompt "pick up the block" \
+  --out_dir raw_episodes
 
-# Step 2: Replay with cameras
-uv run python ur5/scripts/ur5_replay_and_record_raw.py \
+# step 2: replay with cameras to capture the full episode
+python ur5/scripts/ur5_replay_and_record_raw.py \
   --ur_ip 192.10.0.11 \
   --waypoints_path raw_episodes/<episode_id>/waypoints.json \
-  --rs_base_serial <SERIAL> --prompt "pick up the block" \
-  --out_dir raw_episodes --fps 10
+  --rs_base_serial <SERIAL_BASE> \
+  --rs_wrist_serial <SERIAL_WRIST> \
+  --prompt "pick up the block" \
+  --out_dir raw_episodes \
+  --fps 10
+```
 
-# Step 3: Convert to LeRobot
+Repeat steps 1-2 for each episode. Convert and (optionally) push to HuggingFace:
+
+```bash
+export HF_TOKEN=your_token_here
+
 uv run python ur5/scripts/convert_ur5_raw_to_lerobot.py \
-  --raw_dir raw_episodes --repo_id <hf_username>/ur5_dataset --fps 10
+  --raw_dir raw_episodes \
+  --repo_id <hf_username>/ur5_dataset \
+  --fps 10
+# add --no-push-to-hub to keep it local
 ```
 
 ## 4. Train
 
-See [training.md](training.md) for full details:
-
 ```bash
+# compute norm stats first
 uv run scripts/compute_norm_stats.py --config-name pi05_ur5
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi05_ur5 --exp-name=my_exp --overwrite
+
+# train
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi05_ur5 \
+  --exp-name=my_exp --overwrite
 ```
 
-## 5. Deploy and Run
+Checkpoint output: `checkpoints/pi05_ur5/my_exp/<step>/`. See [training.md](training.md) for available configs and lessons learned.
 
-See [deployment.md](deployment.md) for Docker setup:
+## 5. Deploy
 
 ```bash
-# Build image
+# build the inference image
 docker build -t openpi_robot -f ur5/docker/serve_policy_robot.Dockerfile .
 
-# Run (override env vars as needed)
+# run policy server + robot bridge
 docker run --rm -it --gpus=all --network=host \
   --device=/dev/bus/usb:/dev/bus/usb --group-add video \
   -v "$PWD":/app \
-  -e RS_BASE=<camera_serial> \
+  -e RS_BASE=<SERIAL_BASE> \
+  -e RS_WRIST=<SERIAL_WRIST> \
   -e PROMPT="pick up the block" \
   openpi_robot
 ```
 
-## Key Environment Variables
+See [deployment.md](deployment.md) for the full Docker + bridge setup and the env-var reference.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `UR_IP` | `192.10.0.11` | Robot IP address |
-| `RS_BASE` | *(required)* | Base camera serial number |
-| `RS_WRIST` | *(optional)* | Wrist camera serial number |
-| `PROMPT` | `"pick up the grey shaker bottle"` | Language instruction |
-| `ACTION_MODE` | `delta` | `"delta"` or `"absolute"` |
+## CLI config overrides
 
-See [deployment.md](deployment.md) for the full environment variable reference.
+The training CLI overrides any field on the train config without editing `config.py`:
+
+```bash
+uv run scripts/train.py pi05_ur5 \
+  --exp-name=my_exp \
+  --data.repo-id=<hf_username>/ur5_new_dataset \
+  --num-train-steps=300 \
+  --overwrite
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--data.repo-id=X` | use a different HF dataset |
+| `--num-train-steps=N` | training length |
+| `--exp-name=X` | experiment name (becomes part of the checkpoint path) |
+| `--batch-size=N` | override batch size |
+| `--save-interval=N` | checkpoint cadence |
+| `--overwrite` | overwrite an existing checkpoint dir |
+| `--resume` | resume from the last checkpoint |
+
+## Defaults
+
+Hardware defaults live in [`ur5/defaults.py`](../defaults.py) and override via env vars:
+
+| Setting | Env var | Default |
+|---------|---------|---------|
+| Robot IP | `UR_IP` | `192.10.0.11` |
+| Output dir | `OUT_DIR` | `raw_episodes` |
+| Base camera | `RS_BASE` | `137322074310` |
+| Wrist camera | `RS_WRIST` | `137322075008` |
+| Gripper port | `ROBOTIQ_PORT` | `63352` |
+| Start position | — | `(-90, -40, -140, -50, 90, 0)` deg |
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| Camera not found | Check USB 3.0 connection, run `ur5/test/rs_list.py` |
-| Robot connection refused | Ensure Remote Control mode, `ping 192.10.0.11`, RTDE enabled |
+| Camera not found | check USB 3.0, run `ur5/test/rs_list.py` |
+| Robot connection refused | Remote Control mode on, `ping 192.10.0.11`, RTDE enabled |
 | Missing Python modules | `uv pip install pyrealsense2 ur-rtde numpy opencv-python` |
-| Gripper not responding | Check Robotiq URCap is running, port 63352 open |
-| Docker camera access | Pass `--device=/dev/bus/usb:/dev/bus/usb --group-add video` |
-| No display in Docker | Run `xhost +local:docker` on host, pass `-e DISPLAY=$DISPLAY` |
+| Gripper not responding | Robotiq URCap running, port 63352 open |
+| Docker camera access | pass `--device=/dev/bus/usb:/dev/bus/usb --group-add video` |
+| No display in Docker | `xhost +local:docker` on host, pass `-e DISPLAY=$DISPLAY` |
+| No cameras during recording | use `--fake_cam` |

@@ -147,15 +147,17 @@ def train_step(
     def loss_fn(
         model: _model.BaseModel, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions
     ):
-        chunked_loss = model.compute_loss(rng, observation, actions, train=True)
-        return jnp.mean(chunked_loss)
+        chunked_loss, diagnostics = model.compute_loss(rng, observation, actions, train=True)
+        return jnp.mean(chunked_loss), diagnostics
 
     train_rng = jax.random.fold_in(rng, state.step)
     observation, actions = batch
 
     # Filter out frozen params.
     diff_state = nnx.DiffState(0, config.trainable_filter)
-    loss, grads = nnx.value_and_grad(loss_fn, argnums=diff_state)(model, train_rng, observation, actions)
+    (loss, diagnostics), grads = nnx.value_and_grad(loss_fn, argnums=diff_state, has_aux=True)(
+        model, train_rng, observation, actions
+    )
 
     params = state.params.filter(config.trainable_filter)
     updates, new_opt_state = state.tx.update(grads, state.opt_state, params)
@@ -187,7 +189,22 @@ def train_step(
         "loss": loss,
         "grad_norm": optax.global_norm(grads),
         "param_norm": optax.global_norm(kernel_params),
+        **diagnostics,
     }
+
+    # ---- Per-dimension gradient norms on action_out_proj (CUSTOM MODIFICATION) ----
+    # Shows how much gradient each action dimension receives at the final projection layer.
+    # To revert: remove this block.
+    path_leaves, _ = jax.tree_util.tree_flatten_with_path(grads)
+    for path, v in path_leaves:
+        path_str = "/".join(str(p) for p in path)
+        if "action_out_proj" in path_str and hasattr(v, "ndim") and v.ndim == 2:
+            per_dim_gnorm = jnp.sqrt(jnp.sum(jnp.square(v), axis=0))  # (action_dim,)
+            info["gnorm_joints"] = jnp.mean(per_dim_gnorm[:6])
+            info["gnorm_gripper"] = per_dim_gnorm[6]
+            info["gnorm_padded"] = jnp.mean(per_dim_gnorm[7:])
+            break
+
     return new_state, info
 
 
@@ -255,6 +272,9 @@ def main(config: _config.TrainConfig):
         dynamic_ncols=True,
     )
 
+    best_loss = float("inf")
+    patience_counter = 0
+
     infos = []
     for step in pbar:
         with sharding.set_mesh(mesh):
@@ -263,10 +283,34 @@ def main(config: _config.TrainConfig):
         if step % config.log_interval == 0:
             stacked_infos = common_utils.stack_forest(infos)
             reduced_info = jax.device_get(jax.tree.map(jnp.mean, stacked_infos))
+
+            # ---- Batch-level gripper transition monitoring (CUSTOM MODIFICATION) ----
+            # Measures what fraction of the current batch contains gripper transitions.
+            # To revert: remove this block.
+            batch_actions = batch[1]  # (batch, horizon, action_dim)
+            if hasattr(batch_actions, "shape") and batch_actions.ndim == 3 and batch_actions.shape[-1] >= 7:
+                gripper_col = batch_actions[:, :, 6]  # (batch, horizon)
+                gripper_range = np.max(gripper_col, axis=1) - np.min(gripper_col, axis=1)
+                reduced_info["batch_transition_pct"] = float(np.mean(gripper_range > 0.1))
+
             info_str = ", ".join(f"{k}={v:.4f}" for k, v in reduced_info.items())
             pbar.write(f"Step {step}: {info_str}")
             wandb.log(reduced_info, step=step)
             infos = []
+            if config.early_stop_patience > 0:
+                current_loss = float(reduced_info["loss"])
+                if current_loss < best_loss - config.early_stop_min_delta:
+                    best_loss = current_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                if patience_counter >= config.early_stop_patience:
+                    pbar.write(
+                        f"Early stopping at step {step}: loss {current_loss:.6f} has not improved "
+                        f"from {best_loss:.6f} for {patience_counter} intervals"
+                    )
+                    _checkpoints.save_state(checkpoint_manager, train_state, data_loader, step)
+                    break
         batch = next(data_iter)
 
         if (step % config.save_interval == 0 and step > start_step) or step == config.num_train_steps - 1:

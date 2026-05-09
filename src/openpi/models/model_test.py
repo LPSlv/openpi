@@ -17,7 +17,7 @@ def test_pi0_model():
     batch_size = 2
     obs, act = config.fake_obs(batch_size), config.fake_act(batch_size)
 
-    loss = nnx_utils.module_jit(model.compute_loss)(key, obs, act)
+    loss, diagnostics = nnx_utils.module_jit(model.compute_loss)(key, obs, act)
     assert loss.shape == (batch_size, config.action_horizon)
 
     actions = nnx_utils.module_jit(model.sample_actions)(key, obs, num_steps=10)
@@ -32,7 +32,7 @@ def test_pi0_lora_model():
     batch_size = 2
     obs, act = config.fake_obs(batch_size), config.fake_act(batch_size)
 
-    loss = nnx_utils.module_jit(model.compute_loss)(key, obs, act)
+    loss, diagnostics = nnx_utils.module_jit(model.compute_loss)(key, obs, act)
     assert loss.shape == (batch_size, config.action_horizon)
 
     actions = nnx_utils.module_jit(model.sample_actions)(key, obs, num_steps=10)
@@ -47,7 +47,7 @@ def test_pi0_fast_model():
     batch_size = 2
     obs, act = config.fake_obs(batch_size), config.fake_act(batch_size)
 
-    loss = nnx_utils.module_jit(model.compute_loss)(key, obs, act)
+    loss, diagnostics = nnx_utils.module_jit(model.compute_loss)(key, obs, act)
     assert loss.shape == (batch_size,)
 
     actions = nnx_utils.module_jit(model.sample_actions)(key, obs)
@@ -62,7 +62,7 @@ def test_pi0_fast_lora_model():
     batch_size = 2
     obs, act = config.fake_obs(batch_size), config.fake_act(batch_size)
 
-    loss = nnx_utils.module_jit(model.compute_loss)(key, obs, act)
+    loss, diagnostics = nnx_utils.module_jit(model.compute_loss)(key, obs, act)
     assert loss.shape == (batch_size,)
 
     actions = nnx_utils.module_jit(model.sample_actions)(key, obs)
@@ -87,7 +87,7 @@ def test_model_restore():
         _model.restore_params(download.maybe_download("gs://openpi-assets/checkpoints/pi0_base/params"))
     )
 
-    loss = model.compute_loss(key, obs, act)
+    loss, diagnostics = model.compute_loss(key, obs, act)
     assert loss.shape == (batch_size, config.action_horizon)
 
     actions = model.sample_actions(key, obs, num_steps=10)

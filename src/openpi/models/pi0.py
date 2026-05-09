@@ -67,6 +67,24 @@ class Pi0(_model.BaseModel):
     def __init__(self, config: pi0_config.Pi0Config, rngs: nnx.Rngs):
         super().__init__(config.action_dim, config.action_horizon, config.max_token_len)
         self.pi05 = config.pi05
+        # ---- Per-dimension loss weighting (CUSTOM MODIFICATION) ----
+        # Build a weight vector from config. Default: None (original behavior).
+        # To revert: set action_dim_weights=None in the Pi0Config.
+        # Stored as a plain Python tuple — Flax NNX rejects both jax and numpy
+        # arrays as module attributes ("Arrays leaves are not supported").
+        # Converted to jnp.array inside compute_loss (JIT makes it a constant).
+        self._loss_dim_weights: tuple[float, ...] | None = None
+        if config.action_dim_weights is not None:
+            # Start with zeros so padded dims (beyond the real action dims) don't
+            # dilute the loss.  Only dims explicitly listed get non-zero weight;
+            # unlisted real dims default to 1.0 via the max(dim_index) heuristic below.
+            real_dims = max(idx for idx, _ in config.action_dim_weights) + 1  # e.g. 7 for UR5
+            w = [0.0] * config.action_dim
+            for i in range(real_dims):
+                w[i] = 1.0
+            for dim_idx, weight in config.action_dim_weights:
+                w[dim_idx] = weight
+            self._loss_dim_weights = tuple(w)
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -188,7 +206,7 @@ class Pi0(_model.BaseModel):
     @override
     def compute_loss(
         self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
-    ) -> at.Float[at.Array, "*b ah"]:
+    ) -> tuple[at.Float[at.Array, "*b ah"], dict[str, at.Array]]:
         preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
 
@@ -211,7 +229,27 @@ class Pi0(_model.BaseModel):
         )
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
-        return jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        # ---- Per-dimension loss weighting (CUSTOM MODIFICATION) ----
+        # Original: jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        # Modified: weighted mean across action dimensions.
+        # To revert: set action_dim_weights=None in Pi0Config (weights become None,
+        # and this falls through to the original unweighted mean).
+        sq_err = jnp.square(v_t - u_t)
+
+        # ---- Per-dimension diagnostics (CUSTOM MODIFICATION) ----
+        # Breakdown of unweighted MSE per action group for wandb logging.
+        # stop_gradient ensures diagnostics don't affect the training loss gradient.
+        per_dim = jax.lax.stop_gradient(jnp.mean(sq_err, axis=(0, 1)))  # (action_dim,)
+        diagnostics = {
+            "loss_joints_mean": jnp.mean(per_dim[:6]),
+            "loss_gripper": per_dim[6],
+            "loss_padded_mean": jnp.mean(per_dim[7:]),
+        }
+
+        if self._loss_dim_weights is not None:
+            w = jnp.array(self._loss_dim_weights)  # tuple → jax constant (traced once by JIT)
+            return jnp.sum(sq_err * w, axis=-1) / jnp.sum(w), diagnostics
+        return jnp.mean(sq_err, axis=-1), diagnostics
 
     @override
     def sample_actions(

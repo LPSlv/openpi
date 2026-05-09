@@ -7,7 +7,7 @@ from typing import Literal, Protocol, SupportsIndex, TypeVar
 
 import jax
 import jax.numpy as jnp
-import lerobot.common.datasets.lerobot_dataset as lerobot_dataset
+import lerobot.datasets.lerobot_dataset as lerobot_dataset
 import numpy as np
 import torch
 
@@ -127,6 +127,72 @@ class FakeDataset(Dataset):
         return self._num_samples
 
 
+def _compute_gripper_oversample_weights(
+    dataset: Dataset,
+    action_horizon: int,
+    oversample_factor: float,
+    gripper_dim: int = 6,
+    transition_threshold: float = 0.3,
+) -> torch.Tensor:
+    """Compute per-sample weights for oversampling gripper transition frames.
+
+    CUSTOM MODIFICATION: Scans the raw gripper column from the LeRobot dataset
+    to find frames whose action chunk (window of action_horizon steps) contains
+    a gripper transition. Those frames get ``oversample_factor`` weight; all
+    others get 1.0.
+
+    Uses the underlying dataset table for fast scanning (no image loading).
+    To revert: set gripper_oversample_factor=None in LeRobotUR5DataConfig.
+    """
+    n = len(dataset)
+    weights = torch.ones(n)
+
+    # Fast path: extract gripper column from the underlying LeRobot dataset.
+    # Walk through wrappers (TransformedDataset, etc.) to find the LeRobotDataset.
+    raw = dataset
+    while hasattr(raw, "_dataset"):
+        raw = raw._dataset
+    if hasattr(raw, "hf_dataset"):
+        # LeRobotDataset stores data in a HuggingFace dataset.
+        # Use select_columns to load ONLY gripper + episode_index (avoids loading images).
+        hf = raw.hf_dataset
+        subset = hf.select_columns(["gripper", "episode_index"])
+        gripper_col = np.array(subset["gripper"], dtype=np.float32)
+        episode_indices = np.array(subset["episode_index"])
+
+        n_transition = 0
+        for i in range(n):
+            ep = episode_indices[i]
+            # Look ahead action_horizon steps within the same episode
+            end = min(i + action_horizon, n)
+            # Don't cross episode boundaries
+            chunk_mask = episode_indices[i:end] == ep
+            chunk_gripper = gripper_col[i:end][chunk_mask]
+            if len(chunk_gripper) > 1:
+                gripper_range = float(chunk_gripper.max() - chunk_gripper.min())
+                if gripper_range > transition_threshold:
+                    weights[i] = oversample_factor
+                    n_transition += 1
+    else:
+        # Fallback: slow scan (loads full samples including images)
+        logging.warning("Could not access raw gripper data — falling back to slow scan")
+        n_transition = 0
+        for i in range(n):
+            sample = dataset[i]
+            actions = sample["actions"]
+            if hasattr(actions, "ndim") and actions.ndim >= 2:
+                gripper_vals = np.asarray(actions[..., gripper_dim])
+                if float(gripper_vals.max() - gripper_vals.min()) > transition_threshold:
+                    weights[i] = oversample_factor
+                    n_transition += 1
+
+    logging.info(
+        f"Gripper oversampling: {n_transition}/{n} transition frames ({100*n_transition/n:.1f}%), "
+        f"oversample_factor={oversample_factor}"
+    )
+    return weights
+
+
 def create_torch_dataset(
     data_config: _config.DataConfig, action_horizon: int, model_config: _model.BaseModelConfig
 ) -> Dataset:
@@ -143,10 +209,15 @@ def create_torch_dataset(
         delta_timestamps={
             key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
         },
+        video_backend="pyav",
     )
 
     if data_config.prompt_from_task:
-        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
+        # lerobot v3 returns tasks as a DataFrame; convert to dict[int, str].
+        tasks = dataset_meta.tasks
+        if not isinstance(tasks, dict):
+            tasks = dict(zip(tasks["task_index"], tasks.index))
+        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(tasks)])
 
     return dataset
 
@@ -300,6 +371,19 @@ def create_torch_data_loader(
         seed: The seed to use for shuffling the data.
     """
     dataset = create_torch_dataset(data_config, action_horizon, model_config)
+
+    # ---- Gripper transition oversampling (CUSTOM MODIFICATION) ----
+    # Compute sample weights BEFORE applying transforms (faster — raw dataset access).
+    # Must be done before transform_dataset because transforms may change action format.
+    # To revert: set gripper_oversample_factor=None in LeRobotUR5DataConfig.
+    gripper_sampler = None
+    if data_config.gripper_oversample_factor is not None:
+        logging.info(f"Pre-scanning dataset for gripper transitions (oversample_factor={data_config.gripper_oversample_factor})...")
+        weights = _compute_gripper_oversample_weights(dataset, action_horizon, data_config.gripper_oversample_factor)
+        gripper_sampler = torch.utils.data.WeightedRandomSampler(
+            weights, num_samples=len(dataset), replacement=True
+        )
+
     dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
 
     # Use TorchDataLoader for both frameworks
@@ -321,13 +405,15 @@ def create_torch_data_loader(
     else:
         local_batch_size = batch_size // jax.process_count()
 
+    # Gripper oversampling sampler takes priority over DDP sampler and shuffle.
+    effective_sampler = sampler or gripper_sampler
     logging.info(f"local_batch_size: {local_batch_size}")
     data_loader = TorchDataLoader(
         dataset,
         local_batch_size=local_batch_size,
         sharding=None if framework == "pytorch" else sharding,
-        shuffle=(sampler is None and shuffle),  # Don't shuffle if using sampler
-        sampler=sampler,
+        shuffle=(effective_sampler is None and shuffle),  # Don't shuffle if using sampler
+        sampler=effective_sampler,
         num_batches=num_batches,
         num_workers=num_workers,
         seed=seed,

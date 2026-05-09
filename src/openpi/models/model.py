@@ -277,7 +277,13 @@ class BaseModel(nnx.Module, abc.ABC):
         actions: Actions,
         *,
         train: bool = False,
-    ) -> at.Float[at.Array, "*b ah"]: ...
+    ) -> tuple[at.Float[at.Array, "*b ah"], dict[str, at.Array]]:
+        """Returns (per-timestep loss, diagnostics dict).
+
+        The diagnostics dict contains per-dimension loss breakdowns for logging.
+        Implementations that don't need diagnostics should return an empty dict.
+        """
+        ...
 
     @abc.abstractmethod
     def sample_actions(self, rng: at.KeyArrayLike, observation: Observation, **kwargs) -> Actions: ...

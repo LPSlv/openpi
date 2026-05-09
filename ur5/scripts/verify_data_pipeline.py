@@ -37,11 +37,10 @@ def main():
     print(f"use_quantile_norm: {data_config.use_quantile_norm}")
     print()
 
-    # Load raw dataset (no transforms)
     dataset = _data_loader.create_torch_dataset(data_config, config.model.action_horizon, config.model)
     print(f"Dataset size: {len(dataset)} frames")
 
-    # Find a sample with a gripper transition
+    # find a sample whose action chunk contains a gripper transition
     transition_idx = None
     for i in range(len(dataset)):
         sample = dataset[i]
@@ -62,7 +61,6 @@ def main():
     print(f"Raw sample keys: {list(raw_sample.keys())}")
     print()
 
-    # Extract raw gripper info
     raw_actions = np.asarray(raw_sample.get("actions", raw_sample.get("action")))
     raw_gripper_col = raw_actions[..., 6] if raw_actions.ndim >= 2 else raw_actions[6:]
     print("=" * 70)
@@ -74,8 +72,7 @@ def main():
     print(f"  First 10 gripper values: {raw_gripper_col[:10].round(4)}")
     print()
 
-    # Apply transforms one by one
-    # Stage 1: Repack
+    # stage 1: repack
     repack_transforms = data_config.repack_transforms.inputs
     sample = copy.deepcopy(raw_sample)
     for t in repack_transforms:
@@ -90,7 +87,7 @@ def main():
         print(f"  actions[:, 6]: min={actions[:, 6].min():.4f}, max={actions[:, 6].max():.4f}")
     print()
 
-    # Stage 2: Data transforms (UR5Inputs + DeltaActions)
+    # stage 2: UR5Inputs + DeltaActions
     data_input_transforms = data_config.data_transforms.inputs
     sample_pre_delta = copy.deepcopy(sample)
     for t in data_input_transforms:
@@ -110,7 +107,7 @@ def main():
         print(f"  First 10 gripper values: {actions[:10, 6].round(4)}")
     print()
 
-    # Stage 3: Normalize
+    # stage 3: normalize
     norm_stats = data_config.norm_stats
     if norm_stats:
         print("STAGE 3: After Normalize")
@@ -134,7 +131,7 @@ def main():
         sample_normed = copy.deepcopy(sample_pre_delta)
     print()
 
-    # Stage 4: Model transforms (PadStatesAndActions)
+    # stage 4: model transforms (PadStatesAndActions)
     model_transforms = data_config.model_transforms.inputs
     sample_padded = copy.deepcopy(sample_normed)
     for t in model_transforms:
@@ -154,15 +151,15 @@ def main():
         print(f"  actions[:, 31] (last pad): min={actions[:, 31].min():.6f}, max={actions[:, 31].max():.6f}")
     print()
 
-    # Stage 5: Verify inverse transforms (inference path)
+    # stage 5: verify the inference inverse path
     print("=" * 70)
     print("INVERSE PIPELINE (inference path)")
     print()
 
-    # Simulate a model output: use the padded normalized actions as if the model predicted them perfectly
+    # pretend the model returned the padded normalized actions exactly
     model_output = copy.deepcopy(sample_padded)
 
-    # Inverse Stage 1: Unnormalize
+    # inverse stage 1: unnormalize
     if norm_stats:
         unnormalize_fn = _transforms.Unnormalize(norm_stats, use_quantiles=data_config.use_quantile_norm)
         inv_sample = unnormalize_fn(copy.deepcopy(model_output))
@@ -176,7 +173,7 @@ def main():
         inv_sample = copy.deepcopy(model_output)
     print()
 
-    # Inverse Stage 2: UR5Outputs (slice to 7 dims)
+    # inverse stage 2: UR5Outputs (slice back to 7 dims) + AbsoluteActions
     output_transforms = data_config.data_transforms.outputs
     inv_sample2 = copy.deepcopy(inv_sample)
     for t in output_transforms:
@@ -190,7 +187,6 @@ def main():
             print(f"  actions[:, 0] (joint 0, final): min={actions[:, 0].min():.4f}, max={actions[:, 0].max():.4f}")
             print(f"  First 10 final gripper: {actions[:10, 6].round(4)}")
 
-    # Compare round-trip
     print()
     print("=" * 70)
     print("ROUND-TRIP COMPARISON")

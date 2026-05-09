@@ -21,7 +21,6 @@ n = len(dataset)
 print(f"Total frames: {n}")
 print(f"Features: {list(dataset[0].keys())}")
 
-# Collect all gripper state and action values
 gripper_states = []
 gripper_actions = []
 episode_indices = []
@@ -39,16 +38,14 @@ gripper_states = np.array(gripper_states)
 gripper_actions = np.array(gripper_actions)
 episode_indices = np.array(episode_indices)
 
-# Overall stats
 print(f"\n=== GRIPPER STATS ===")
 print(f"State  - min: {gripper_states.min():.4f}, max: {gripper_states.max():.4f}, mean: {gripper_states.mean():.4f}")
 print(f"Action - min: {gripper_actions.min():.4f}, max: {gripper_actions.max():.4f}, mean: {gripper_actions.mean():.4f}")
 
-# Correlation
 corr = np.corrcoef(gripper_states, gripper_actions)[0, 1]
 print(f"Correlation(state, action): {corr:.4f}")
 
-# Echo frames (state == action)
+# "echo" frames are the ones where the action just repeats state[6]
 THRESHOLD = 0.01
 echo_mask = np.abs(gripper_states - gripper_actions) < THRESHOLD
 echo_count = echo_mask.sum()
@@ -57,13 +54,12 @@ print(f"\n=== TRANSITION ANALYSIS ===")
 print(f"Echo frames (state ≈ action):     {echo_count} ({100*echo_count/n:.1f}%)")
 print(f"Transition frames (state ≠ action): {transition_count} ({100*transition_count/n:.2f}%)")
 
-# Classify transitions
 close_transitions = ((gripper_states < 0.5) & (gripper_actions > 0.5)).sum()
 open_transitions = ((gripper_states > 0.5) & (gripper_actions < 0.5)).sum()
 print(f"  Close transitions (0→1): {close_transitions}")
 print(f"  Open transitions (1→0):  {open_transitions}")
 
-# Forward-looking verification: action[t] should == state[t+1]
+# confirm action[t] == state[t+1] within an episode
 print(f"\n=== FORWARD-LOOKING VERIFICATION ===")
 mismatches = 0
 checked = 0
@@ -82,7 +78,6 @@ print(f"Checked {checked} frame pairs, {mismatches} mismatches ({100*mismatches/
 if mismatches == 0:
     print("PASS: action[t] == state[t+1] for all frames (forward-looking confirmed)")
 
-# Per-episode gripper timeline
 print(f"\n=== PER-EPISODE GRIPPER TIMELINE ===")
 for ep in np.unique(episode_indices):
     ep_mask = episode_indices == ep
@@ -90,7 +85,6 @@ for ep in np.unique(episode_indices):
     ep_actions = gripper_actions[ep_mask]
     n_ep = len(ep_states)
 
-    # Find transition points
     transitions = []
     for t in range(n_ep - 1):
         if abs(ep_states[t + 1] - ep_states[t]) > 0.5:

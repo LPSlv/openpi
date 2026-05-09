@@ -41,7 +41,6 @@ def main():
     parser.add_argument("--max-steps", type=int, default=0, help="Max steps to replay (0=all)")
     args = parser.parse_args()
 
-    # Find all recorded steps
     rec_dir = pathlib.Path(args.record_dir)
     npz_files = sorted(rec_dir.glob("step_*.npz"))
     if not npz_files:
@@ -52,7 +51,6 @@ def main():
     if args.max_steps > 0:
         npz_files = npz_files[:args.max_steps]
 
-    # Load model
     print(f"Loading model: config={args.config} checkpoint={args.checkpoint}")
     from openpi.policies import policy_config as pc
     from openpi.training import config as cfg
@@ -61,7 +59,7 @@ def main():
     policy = pc.create_trained_policy(config, args.checkpoint, default_prompt=args.prompt)
     print(f"Model loaded. action_horizon={config.model.action_horizon}")
 
-    # Optionally load dataset for visual comparison
+    # the dataset is only needed when --dataset is passed for side-by-side comparison
     dataset = None
     if args.dataset:
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -71,7 +69,6 @@ def main():
     if args.save_images:
         os.makedirs(args.save_images, exist_ok=True)
 
-    # Replay each step
     print(f"\n{'Step':>4s}  {'Gripper(bridge)':>15s}  {'Gripper(replay)':>15s}  {'Match':>5s}  {'ImgMean':>7s}")
     print("-" * 70)
 
@@ -92,14 +89,12 @@ def main():
             "prompt": prompt,
         }
 
-        # Run inference
         out = policy.infer(copy.deepcopy(obs))
         replay_actions = out["actions"]  # (horizon, 7)
 
         bridge_g = bridge_actions[:, 6]
         replay_g = replay_actions[:, 6]
 
-        # Compare
         bridge_g_mean = bridge_g.mean()
         replay_g_mean = replay_g.mean()
         match = abs(bridge_g_mean - replay_g_mean) < 0.05
@@ -113,14 +108,11 @@ def main():
             f"{image.mean():7.1f}"
         )
 
-        # Save side-by-side images
         if args.save_images:
-            # Bridge image
             bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
             bgr_wrist = cv2.cvtColor(wrist_image, cv2.COLOR_RGB2BGR)
             vis = np.hstack([bgr, bgr_wrist])
 
-            # Add text overlay
             cv2.putText(vis, f"Step {step_num} | gripper={replay_g_mean:.3f}", (5, 15),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
             cv2.putText(vis, f"state[6]={state[6]:.3f}", (5, 30),

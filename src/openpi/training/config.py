@@ -372,16 +372,8 @@ class LeRobotUR5DataConfig(DataConfigFactory):
 
     gripper_oversample_factor: float | None = None
 
-    # raw HF column name LeRobot expands into action chunks before the repack runs.
-    # our datasets use "actions" (plural), F-Fer's uses "action" (singular)
-    action_key: str = "actions"
-
-    # override the default repack mapping; None uses _DEFAULT_REPACK below.
-    # set this when training on a dataset with different column names (e.g. F-Fer)
-    repack_structure: dict[str, str] | None = dataclasses.field(default=None, hash=False, compare=False)
-
-    # default mapping from our dataset columns to the UR5Inputs training format
-    _DEFAULT_REPACK: ClassVar[dict[str, str]] = {
+    # mapping from our dataset columns to the UR5Inputs training format
+    _REPACK: ClassVar[dict[str, str]] = {
         "base_rgb": "image",
         "wrist_rgb": "wrist_image",
         "joints": "joints",
@@ -390,20 +382,9 @@ class LeRobotUR5DataConfig(DataConfigFactory):
         "prompt": "prompt",
     }
 
-    # F-Fer's columns: observation.state is 7D and maps to "joints"; UR5Inputs's
-    # second input format handles the joint/gripper split internally
-    FFER_REPACK: ClassVar[dict[str, str]] = {
-        "joints": "observation.state",
-        "base_rgb": "observation.images.zed2i_left",
-        "wrist_rgb": "observation.images.zedm_left",
-        "actions": "action",
-        "prompt": "prompt",
-    }
-
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        structure = self.repack_structure if self.repack_structure is not None else self._DEFAULT_REPACK
-        repack_transform = _transforms.Group(inputs=[_transforms.RepackTransform(structure)])
+        repack_transform = _transforms.Group(inputs=[_transforms.RepackTransform(self._REPACK)])
 
         # the UR5Inputs/UR5Outputs transforms live in src/openpi/policies/ur5_policy.py
         data_transforms = _transforms.Group(
@@ -433,7 +414,7 @@ class LeRobotUR5DataConfig(DataConfigFactory):
             model_transforms=model_transforms,
             use_quantile_norm=use_quantile,
             gripper_oversample_factor=self.gripper_oversample_factor,
-            action_sequence_keys=(self.action_key,),
+            action_sequence_keys=("actions",),
         )
 
 

@@ -60,8 +60,7 @@ class UR5Outputs(transforms.DataTransformFn):
 ## LeRobotUR5DataConfig
 
 Binds a HuggingFace LeRobot dataset to the openpi training pipeline. Full
-implementation (with action_key/repack overrides, gripper oversampling, etc.)
-in `src/openpi/training/config.py`.
+implementation (with gripper oversampling, etc.) in `src/openpi/training/config.py`.
 
 ```python
 @dataclasses.dataclass(frozen=True)

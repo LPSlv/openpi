@@ -89,9 +89,7 @@ RS_AUTO_EXPOSURE = os.environ.get("RS_AUTO_EXPOSURE", "")  # "" = don't touch, "
 RS_EXPOSURE = os.environ.get("RS_EXPOSURE", "")  # "" = don't touch, base camera exposure
 RS_WRIST_EXPOSURE = os.environ.get("RS_WRIST_EXPOSURE", "")  # "" = same as RS_EXPOSURE, otherwise wrist-specific
 
-# ---- Inference recording (CUSTOM MODIFICATION) ----
 # When set, saves each inference observation + action to disk for offline replay.
-# To revert: unset RECORD_DIR or set to empty.
 RECORD_DIR = os.environ.get("RECORD_DIR", "")
 
 # ---- Dual-policy gripper override ----
@@ -169,10 +167,9 @@ if SHOW_IMAGES:
 
 def _process_bgr(bgr: np.ndarray) -> np.ndarray:
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    # Resize to 256x256 to match training pipeline (recording saves 256x256 JPEGs).
-    # The model's ResizeImages(224,224) transform will downscale to 224x224,
-    # giving the same interpolation path as training.
-    # Previously resized directly to 224x224, skipping the intermediate 256 step.
+    # Match the training pipeline: recording saves 256x256 JPEGs and the model's
+    # ResizeImages(224, 224) transform downscales from there. Resizing directly
+    # to 224 here skips that intermediate step and changes the interpolation path.
     rgb = image_tools.resize_with_pad(rgb, 256, 256)
     return image_tools.convert_to_uint8(rgb)
 
@@ -186,8 +183,7 @@ def _start_rgb(serial: str, *, exposure_override: str = "") -> "rs.pipeline | No
     cfg.enable_stream(rs.stream.color, RS_W, RS_H, rs.format.bgr8, RS_FPS)
     prof = pipe.start(cfg)
 
-    # ---- Apply and log camera settings (CUSTOM MODIFICATION) ----
-    # exposure_override allows per-camera exposure (e.g. wrist needs higher exposure)
+    # exposure_override lets the wrist camera use a different exposure than the base.
     exposure_val = exposure_override if exposure_override else RS_EXPOSURE
     try:
         for s in prof.get_device().sensors:
@@ -506,7 +502,6 @@ def main() -> None:
                         if _has_gui:
                             print(f"WARNING: Failed to display image: {e}", file=sys.stderr, flush=True)
             
-            # ---- Image diagnostics on first step (CUSTOM MODIFICATION) ----
             if infer_step == 0:
                 print(
                     f"Image diagnostics (step 0):\n"
@@ -542,8 +537,6 @@ def main() -> None:
                 flush=True,
             )
 
-            # ---- Save observation + actions for offline replay (CUSTOM MODIFICATION) ----
-            # To revert: unset RECORD_DIR.
             if RECORD_DIR:
                 rec_dir = os.path.join(RECORD_DIR)
                 os.makedirs(rec_dir, exist_ok=True)

@@ -32,13 +32,9 @@ class Pi0Config(_model.BaseModelConfig):
     # This config option is not used directly by the model, but it is read by the ModelTransformFactory.
     discrete_state_input: bool = None  # type: ignore
 
-    # ---- Per-dimension loss weighting (CUSTOM MODIFICATION) ----
-    # Tuple of (dim_index, weight_multiplier) pairs for the flow matching loss.
-    # Dimensions not listed use weight 1.0.  Set to None to disable (default).
-    # Example: ((6, 10.0),) applies 10x weight to the gripper dimension.
-    # This addresses the data imbalance where the gripper (dim 6) transitions
-    # are <1% of training frames, causing the model to learn "keep gripper unchanged."
-    # To revert: set action_dim_weights=None in the config (or remove the kwarg).
+    # (dim_index, weight_multiplier) pairs for the flow matching loss; unlisted
+    # real dims default to 1.0, padded dims to 0.0. Used to upweight rare gripper
+    # transitions. Example: ((6, 10.0),) applies 10x weight to the gripper dim.
     action_dim_weights: tuple[tuple[int, float], ...] | None = None
 
     def __post_init__(self):

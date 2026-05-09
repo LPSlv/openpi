@@ -18,13 +18,13 @@ class Args:
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # If None, will auto-use the action horizon reported by the policy server metadata (recommended).
+    # if None, falls back to the action horizon reported by the policy server
     action_horizon: int | None = None
 
     num_episodes: int = 1
     max_episode_steps: int = 1000
 
-    # UR5 specific configuration
+    # UR5 hardware
     ur_ip: str = os.environ.get("UR_IP", "192.168.1.116")
     rs_base_serial: str = os.environ.get("RS_BASE", "")
     rs_wrist_serial: str = os.environ.get("RS_WRIST", "")
@@ -67,7 +67,6 @@ def main(args: Args) -> None:
     try:
         runtime.run()
     finally:
-        # Clean up environment resources
         runtime._environment.close()
 
 

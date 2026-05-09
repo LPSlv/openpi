@@ -1,16 +1,7 @@
-"""
-Test UR robot movement and Robotiq gripper control.
+"""Sanity test: activate the gripper, swing joint 0 by +/- 20 deg, close and re-open the gripper.
 
-This script performs:
-1. Robotiq gripper activation
-2. Base joint movement test (joint 0): -20 degrees, then +20 degrees
-3. Robotiq gripper close and open
-
-Gripper control uses Robotiq URCap socket service (port 63352).
-
-Requirements:
-- ur_rtde library: pip3 install ur_rtde
-- Robotiq URCap installed on robot controller
+Gripper control uses the Robotiq URCap socket service on port 63352.
+Requires ur_rtde and the Robotiq URCap on the controller.
 """
 
 import time
@@ -29,19 +20,14 @@ from ur5.utils.rtde_utils import (
     create_rtde_control as _create_rtde_control,
 )
 
-# Robot IP address
 UR_IP = _defaults.UR_IP
 
-# Robotiq Hand-E gripper settings (URCap socket service)
+# motion tuning for the base-joint test
+DELTA_DEG  = 20.0          # joint 0 swing in degrees
+MOVEJ_VEL  = 0.50          # rad/s
+MOVEJ_ACC  = 0.50          # rad/s^2
 
-
-# Motion tuning
-DELTA_DEG  = 20.0          # base joint movement step (degrees)
-MOVEJ_VEL  = 0.50          # joint speed (rad/s) for moveJ
-MOVEJ_ACC  = 0.50          # joint accel (rad/s^2) for moveJ
-
-
-# Soft absolute joint limits (deg) – very conservative
+# conservative soft joint limits in degrees
 SOFT_MIN_DEG = np.array([-180, -180, -180, -180, -180, -180], float)
 SOFT_MAX_DEG = np.array([ 180,  180,  180,  180,  180,  180], float)
 
@@ -65,7 +51,6 @@ def main():
             print("Robot not ready (mode or safety). Put in Remote Control, clear any stops, then retry.")
             return
 
-        # Initialize and activate gripper
         print("\n" + "="*60)
         print("Initializing Robotiq Gripper")
         print("="*60)
@@ -87,7 +72,6 @@ def main():
         time.sleep(2.0)
         rcv = ensure_rcv(rcv, UR_IP)
 
-        # Base joint movement test
         print("\n" + "="*60)
         print("Testing Base Joint Movement")
         print("="*60)
@@ -110,14 +94,13 @@ def main():
             print(f"ERROR: Cannot read robot position: {e}")
             return
 
-        # Base joint movement test
         delta = DELTA_DEG
         base_move_ok = True
-        for step in (-delta, +delta):  # negative first, then back
+        for step in (-delta, +delta):  # negative direction first, then back
             rcv = ensure_rcv(rcv, UR_IP)
-            
+
             if not ok_to_move(rcv):
-                print("Robot not ready (mode or safety) – stopping.")
+                print("Robot not ready (mode or safety), stopping.")
                 return
 
             target_deg = q_deg.copy()
@@ -138,12 +121,11 @@ def main():
                 base_move_ok = False
                 return
 
-            # Verify target reached
             try:
                 reached = _wait_joint0_reaches_target(rcv, target_rad.tolist(), tol_deg=1.0, timeout_s=8.0)
             except Exception as e:
                 print(f"WARNING: RTDE receive failed during verification: {e}")
-                reached = True  # Assume success if receive dies
+                reached = True  # if receive crashes, fail open and assume the move worked
 
             if not reached:
                 print("ERROR: Base joint did not reach target within timeout.")
@@ -168,7 +150,6 @@ def main():
         print("Base joint movement test completed!")
         print("="*60 + "\n")
 
-        # Test gripper close and open
         if gripper is not None:
             print("Closing gripper...", end=" ", flush=True)
             try:

@@ -1,13 +1,6 @@
-"""
-List all connected RealSense cameras and display their serial numbers.
+"""List connected RealSense cameras with their serial numbers and USB type.
 
-This script scans for RealSense devices and prints information about each:
-- Device name
-- Serial number (needed for other scripts)
-- USB type
-- Available sensors
-
-Run this first to get serial numbers before using rs_rgb.py.
+Run this first to get serials for camera_test.py and the recording scripts.
 """
 
 import pyrealsense2 as rs

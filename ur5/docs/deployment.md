@@ -93,13 +93,13 @@ set", "OpenCV compiled without GUI support", "X11 connection test failed".
 
 Common causes:
 
-- **xhost not permitted** — re-run `xhost +local:docker` (and
-  `xhost +SI:localuser:root`) in the same login session
-- **No X server reachable** — happens over plain SSH; either enable X
-  forwarding (slow) or set `-e SHOW_IMAGES=0`
-- **Wayland host** — make sure XWayland is running and `$DISPLAY` is set; if
-  needed force `-e DISPLAY=:0`
-- **Headless OpenCV inside the container** — if you see "OpenCV compiled
+- **xhost not permitted.** Re-run `xhost +local:docker` (and
+  `xhost +SI:localuser:root`) in the same login session.
+- **No X server reachable.** Happens over plain SSH. Either enable X
+  forwarding (slow) or set `-e SHOW_IMAGES=0`.
+- **Wayland host.** Make sure XWayland is running and `$DISPLAY` is set; if
+  needed force `-e DISPLAY=:0`.
+- **Headless OpenCV inside the container.** If you see "OpenCV compiled
   without GUI support", an opencv-python-headless wheel beat the GUI build
   to the venv. Rebuild the image; the Dockerfile uninstalls the headless
   variant before pinning the GUI build.

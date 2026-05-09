@@ -37,9 +37,9 @@ ur5/
 
 These follow the upstream project's conventions:
 
-- [`src/openpi/policies/ur5_policy.py`](../src/openpi/policies/ur5_policy.py) — UR5Inputs / UR5Outputs transforms
-- [`src/openpi/training/config.py`](../src/openpi/training/config.py) — UR5 train configs (search for `ur5`)
-- [`examples/ur5/`](../examples/ur5/) — upstream-style runtime example and API tutorial
+- [`src/openpi/policies/ur5_policy.py`](../src/openpi/policies/ur5_policy.py): UR5Inputs / UR5Outputs transforms
+- [`src/openpi/training/config.py`](../src/openpi/training/config.py): UR5 train configs (search for `ur5`)
+- [`examples/ur5/`](../examples/ur5/): upstream-style runtime example and API tutorial
 
 ## Workflow
 

@@ -1,26 +1,54 @@
 # UR5 Fork of OpenPI
 
-> This is a fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi)
-> adapted for **UR5e robot arm** research. UR5-related code is **not all under `ur5/`** —
-> changes also touch the core training, model, and serving paths inside `src/openpi/`,
-> plus several entry-point scripts and example folders. This README is a complete map of
-> where to look.
+A fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi)
+that adapts the pi0 / pi0.5 / pi0-FAST vision-language-action models to a new
+embodiment (a Universal Robots UR5e arm with a Robotiq 2F gripper) and studies
+how well the resulting policy generalizes to scenes outside its training data.
 
-## Top-level orientation
+## Research context
 
-| Start here | What it covers |
-|------------|----------------|
-| [`ur5/README.md`](ur5/README.md)                     | Directory layout of the UR5 hardware integration and scripts |
-| [`ur5/docs/quickstart.md`](ur5/docs/quickstart.md)   | End-to-end setup from blank machine |
-| [`ur5/docs/training.md`](ur5/docs/training.md)       | Training pipeline, configs, norm stats |
-| [`ur5/docs/deployment.md`](ur5/docs/deployment.md)   | Docker policy-server + robot-bridge deployment |
-| [`ur5/docs/experiments.md`](ur5/docs/experiments.md) | Per-experiment lab notebook and decisions |
-| [`ur5/docs/final_evaluations.md`](ur5/docs/final_evaluations.md) | Final evaluation runs and results |
-| [`ur5/charts/`](ur5/charts/)                         | Evaluation plots (timing, dataset size, ID/OOD) |
+OpenPI is shipped with checkpoints fine-tuned for arms the authors had on hand
+(ALOHA, Libero, DROID). The thesis this repository accompanies asks two
+questions about that recipe:
+
+1. **New embodiment.** Can the same training pipeline be pointed at a UR5e
+   without changing the model architecture, and produce a policy that drives
+   the real robot? The fork keeps pi0 / pi0.5 / pi0-FAST as-is and adds the
+   data, transforms, and runtime glue needed to record episodes on the UR5e,
+   train on them, and execute the resulting policy on hardware.
+2. **Generalization in a new environment.** Once a policy works in-distribution,
+   how does it perform when the target object is moved outside the area
+   covered by training data? The final evaluations sweep checkpoints and
+   compare in-distribution and out-of-distribution success rates on the same
+   pick-and-place task.
+
+The pi0 architecture, training loop, and norm-stats pipeline are all upstream.
+What this fork adds is the embodiment layer (recording, conversion, robot
+control) plus a small set of training-config and runtime knobs (gripper
+oversampling, per-dim loss diagnostics, longer checkpoint retention, slice-
+instead-of-pad unnormalization for narrower action dims) that were needed to
+get the small UR5 datasets to converge on the rare gripper transitions.
+
+## Where to start
+
+| Doc | What's there |
+|-----|--------------|
+| [`ur5/README.md`](ur5/README.md) | Layout of the UR5 directory |
+| [`ur5/docs/quickstart.md`](ur5/docs/quickstart.md) | End-to-end workflow: setup, record, train, deploy |
+| [`ur5/docs/training.md`](ur5/docs/training.md) | Training configs, norm stats, lessons learned |
+| [`ur5/docs/deployment.md`](ur5/docs/deployment.md) | Docker policy server and robot bridge |
+| [`ur5/docs/experiments.md`](ur5/docs/experiments.md) | Per-experiment lab notebook |
+| [`ur5/docs/final_evaluations.md`](ur5/docs/final_evaluations.md) | ID vs OOD evaluation results |
+| [`ur5/charts/`](ur5/charts/) | Evaluation figures |
 
 ## Where every UR5 change lives
 
-### 1. UR5 hardware & runtime — `ur5/` (new directory)
+UR5 code is not all under `ur5/`. The directory holds the new robot-side code,
+but the fork also touches `src/openpi/` (data loader, transforms, training loop,
+serving), `examples/`, `scripts/`, and the dependency manifests. The sections
+below map every file that differs from upstream.
+
+### 1. UR5 hardware and runtime: `ur5/` (new directory)
 
 | Path | Purpose |
 |------|---------|
@@ -34,7 +62,7 @@
 | [`ur5/docs/`](ur5/docs/) | All thesis-side documentation, including `papers/` PDFs |
 | [`ur5/charts/`](ur5/charts/) | Evaluation figures (PDF + PNG) generated from `eval_charts.ipynb` |
 
-### 2. UR5 example app — `examples/ur5/`
+### 2. UR5 example app: `examples/ur5/`
 
 | Path | Status | Purpose |
 |------|--------|---------|
@@ -43,14 +71,14 @@
 | [`examples/ur5/real_env.py`](examples/ur5/real_env.py) | new | Real-hardware env (cameras + RTDE) |
 | [`examples/ur5/README.md`](examples/ur5/README.md)     | modified | UR5 example overview |
 
-### 3. UR5 policy code — `src/openpi/policies/`
+### 3. UR5 policy code: `src/openpi/policies/`
 
 | Path | Status | Purpose |
 |------|--------|---------|
 | [`src/openpi/policies/ur5_policy.py`](src/openpi/policies/ur5_policy.py)           | new | `UR5Inputs` / `UR5Outputs` transforms (image normalization, joint+gripper packing/slicing) |
 | [`src/openpi/policies/ur5_policy_test.py`](src/openpi/policies/ur5_policy_test.py) | new | Unit tests for the UR5 transforms |
 
-### 4. Training configs — `src/openpi/training/config.py` (modified)
+### 4. Training configs: `src/openpi/training/config.py` (modified)
 
 Adds `LeRobotUR5DataConfig` plus the UR5 training configs:
 `pi0_ur5`, `pi05_ur5`, `pi05_ur5_lora`, `pi05_ur5_blueblock10`, `pi0_fast_ur5`.
@@ -58,60 +86,60 @@ Adds `LeRobotUR5DataConfig` plus the UR5 training configs:
 Key knobs added: `use_delta_action_transform`, `gripper_oversample_factor`,
 dataset asset-id overrides.
 
-### 5. Core model & training adaptations — `src/openpi/`
+### 5. Core model and training adaptations: `src/openpi/`
 
-These are upstream-tree files modified to support UR5 training/inference. Each diff is
-gated behind a config option so the upstream behaviour is preserved when the option is unset.
-
-| Path | What changed |
-|------|--------------|
-| [`src/openpi/models/pi0_config.py`](src/openpi/models/pi0_config.py) | Added `action_dim_weights` for per-dimension flow-matching loss weighting (used to upweight gripper transitions) |
-| [`src/openpi/models/model.py`](src/openpi/models/model.py)           | `compute_loss` now returns `(loss, diagnostics)` so per-dim losses can be logged |
-| [`src/openpi/models/model_test.py`](src/openpi/models/model_test.py) | Test updates matching the new `compute_loss` signature |
-| [`src/openpi/models/pi0.py`](src/openpi/models/pi0.py)               | Per-dimension loss diagnostics + optional weighted loss |
-| [`src/openpi/models/pi0_fast.py`](src/openpi/models/pi0_fast.py)     | Matching `compute_loss` signature update |
-| [`src/openpi/models_pytorch/pi0_pytorch.py`](src/openpi/models_pytorch/pi0_pytorch.py) | PyTorch-side adjustments |
-| [`src/openpi/models_pytorch/gemma_pytorch.py`](src/openpi/models_pytorch/gemma_pytorch.py) | PyTorch-side adjustments |
-| [`src/openpi/transforms.py`](src/openpi/transforms.py) | `Unnormalize` handles the case where pretrained norm-stats vector is wider than the runtime action dim (slice instead of pad) |
-| [`src/openpi/training/data_loader.py`](src/openpi/training/data_loader.py) | (a) Migrated import to `lerobot.datasets.lerobot_dataset` (LeRobot v3); (b) added `_compute_gripper_oversample_weights` for transition-aware sampling; (c) lerobot v3 task-table conversion fix |
-| [`src/openpi/training/checkpoints.py`](src/openpi/training/checkpoints.py) | Bumped `max_to_keep` from 1 → 10 so multiple training checkpoints are retained for evaluation |
-| [`src/openpi/shared/download.py`](src/openpi/shared/download.py)     | Force-redownload semantics around `gs://openpi-assets`; routes that bucket through `gsutil` to avoid gcsfs auth issues |
-
-### 6. Entry-point scripts — `scripts/`
+Each of these is gated behind a config option, so upstream behaviour is
+preserved when the option is unset.
 
 | Path | What changed |
 |------|--------------|
-| [`scripts/train.py`](scripts/train.py)                          | Per-dimension gradient-norm logging on `action_out_proj`; batch-level gripper-transition monitoring; early-stopping based on patience/min-delta from the train config |
-| [`scripts/serve_policy.py`](scripts/serve_policy.py)            | Surfaces resolved checkpoint config + `model_type`, `action_horizon`, `action_dim` in policy metadata so clients can auto-configure |
-| [`scripts/compute_norm_stats.py`](scripts/compute_norm_stats.py)| Writes norm stats to `<assets_dir>/<asset_id>` (the path the loader actually reads) instead of `<repo_id>`, with a back-compat copy under the legacy path |
-| [`scripts/docker/train.Dockerfile`](scripts/docker/train.Dockerfile)   | new — training Docker image |
-| [`scripts/docker/compose_train.yml`](scripts/docker/compose_train.yml) | new — compose file for training |
+| [`src/openpi/models/pi0_config.py`](src/openpi/models/pi0_config.py) | added `action_dim_weights` for per-dimension flow-matching loss weighting (upweight rare gripper transitions) |
+| [`src/openpi/models/model.py`](src/openpi/models/model.py) | `compute_loss` now returns `(loss, diagnostics)` so per-dim losses can be logged |
+| [`src/openpi/models/model_test.py`](src/openpi/models/model_test.py) | tests adjusted for the new `compute_loss` signature |
+| [`src/openpi/models/pi0.py`](src/openpi/models/pi0.py) | per-dimension loss diagnostics and optional weighted loss |
+| [`src/openpi/models/pi0_fast.py`](src/openpi/models/pi0_fast.py) | matching `compute_loss` signature update |
+| [`src/openpi/models_pytorch/pi0_pytorch.py`](src/openpi/models_pytorch/pi0_pytorch.py) | small adjustment on the pytorch side |
+| [`src/openpi/models_pytorch/gemma_pytorch.py`](src/openpi/models_pytorch/gemma_pytorch.py) | small adjustment on the pytorch side |
+| [`src/openpi/transforms.py`](src/openpi/transforms.py) | `Unnormalize` slices instead of pads when the pretrained norm-stats vector is wider than the runtime action dim |
+| [`src/openpi/training/data_loader.py`](src/openpi/training/data_loader.py) | migrated to `lerobot.datasets.lerobot_dataset` (v3), added `_compute_gripper_oversample_weights` for transition-aware sampling, fixed the v3 task-table conversion |
+| [`src/openpi/training/checkpoints.py`](src/openpi/training/checkpoints.py) | bumped `max_to_keep` from 1 to 10 so several checkpoints are retained for evaluation sweeps |
+| [`src/openpi/shared/download.py`](src/openpi/shared/download.py) | routes `gs://openpi-assets` through `gsutil` to sidestep gcsfs auth issues, with force-redownload semantics |
 
-### 7. Serving / websocket — `src/openpi/serving/` and client
+### 6. Entry-point scripts: `scripts/`
 
 | Path | What changed |
 |------|--------------|
-| [`src/openpi/serving/websocket_policy_server.py`](src/openpi/serving/websocket_policy_server.py) | Disabled keepalive pings for long inference; `policy.infer` runs in a thread so the server keeps responding to control frames |
-| [`packages/openpi-client/src/openpi_client/websocket_client_policy.py`](packages/openpi-client/src/openpi_client/websocket_client_policy.py) | Matching client-side adjustments |
+| [`scripts/train.py`](scripts/train.py) | per-dimension gradient-norm logging on `action_out_proj`, batch-level gripper-transition fraction, optional early stopping driven by `early_stop_patience` / `early_stop_min_delta` on the train config |
+| [`scripts/serve_policy.py`](scripts/serve_policy.py) | surfaces resolved checkpoint config plus `model_type`, `action_horizon`, `action_dim` in policy metadata so clients can auto-configure |
+| [`scripts/compute_norm_stats.py`](scripts/compute_norm_stats.py) | writes norm stats to `<assets_dir>/<asset_id>` (the path the loader actually reads) instead of `<repo_id>`, with a back-compat copy under the legacy path |
+| [`scripts/docker/train.Dockerfile`](scripts/docker/train.Dockerfile) | new training Docker image |
+| [`scripts/docker/compose_train.yml`](scripts/docker/compose_train.yml) | new compose file for training |
 
-### 8. Other examples — LeRobot v3 conversion fixes
+### 7. Serving and websocket client
+
+| Path | What changed |
+|------|--------------|
+| [`src/openpi/serving/websocket_policy_server.py`](src/openpi/serving/websocket_policy_server.py) | keepalive pings disabled (inference can take longer than the default), and `policy.infer` runs in a thread so the server keeps servicing control frames |
+| [`packages/openpi-client/src/openpi_client/websocket_client_policy.py`](packages/openpi-client/src/openpi_client/websocket_client_policy.py) | matching client-side adjustments |
+
+### 8. Other examples: LeRobot v3 conversion fixes
 
 | Path | What changed |
 |------|--------------|
 | [`examples/aloha_real/convert_aloha_data_to_lerobot.py`](examples/aloha_real/convert_aloha_data_to_lerobot.py) | LeRobot v3 import / API update |
-| [`examples/droid/convert_droid_data_to_lerobot.py`](examples/droid/convert_droid_data_to_lerobot.py) | Same |
-| [`examples/libero/convert_libero_data_to_lerobot.py`](examples/libero/convert_libero_data_to_lerobot.py) | Same |
-| [`examples/droid/README_train.md`](examples/droid/README_train.md) | Doc tweaks |
+| [`examples/droid/convert_droid_data_to_lerobot.py`](examples/droid/convert_droid_data_to_lerobot.py) | same |
+| [`examples/libero/convert_libero_data_to_lerobot.py`](examples/libero/convert_libero_data_to_lerobot.py) | same |
+| [`examples/droid/README_train.md`](examples/droid/README_train.md) | doc tweaks |
 
 ### 9. Repo configuration
 
 | Path | What changed |
 |------|--------------|
-| [`pyproject.toml`](pyproject.toml) | Pin LeRobot to v3 (and other dep adjustments) |
-| [`uv.lock`](uv.lock) | Refreshed for the v3 pin |
-| [`packages/openpi-client/pyproject.toml`](packages/openpi-client/pyproject.toml) | Client-side dep adjustments |
-| [`.pre-commit-config.yaml`](.pre-commit-config.yaml) | Excludes `ur5/` and `examples/ur5/` from lint (research scripts) |
-| [`.gitignore`](.gitignore), [`.dockerignore`](.dockerignore) | Ignore venvs and local artifacts |
+| [`pyproject.toml`](pyproject.toml) | pin LeRobot to v3 plus a few dependency adjustments |
+| [`uv.lock`](uv.lock) | refreshed for the v3 pin |
+| [`packages/openpi-client/pyproject.toml`](packages/openpi-client/pyproject.toml) | client-side dependency adjustments |
+| [`.pre-commit-config.yaml`](.pre-commit-config.yaml) | excludes `ur5/` and `examples/ur5/` from lint (research scripts) |
+| [`.gitignore`](.gitignore), [`.dockerignore`](.dockerignore) | ignore venvs and local artifacts |
 
 ### How to see the full diff vs upstream
 

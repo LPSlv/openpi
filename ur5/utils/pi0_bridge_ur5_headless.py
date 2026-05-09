@@ -4,7 +4,8 @@ import os
 import sys
 import time
 
-# Qt MIT-SHM in Docker → X11 connection breaks; force XCB for container reliability.
+# qt's MIT-SHM extension breaks X11 inside docker, and xcb is the most
+# reliable platform plugin in containers
 os.environ.setdefault("QT_X11_NO_MITSHM", "1")
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
@@ -43,7 +44,7 @@ ACC = float(os.environ.get("ACC", "0.05"))
 LOOKAHEAD = float(os.environ.get("LOOKAHEAD", "0.2"))
 GAIN = float(os.environ.get("GAIN", "150"))
 
-# Wall-clock per chunk; derives HOLD_PER_STEP = INFER_PERIOD / HORIZON_STEPS.
+# wall-clock seconds per chunk; if set, derives HOLD_PER_STEP from HORIZON_STEPS
 _infer_period_raw = os.environ.get("INFER_PERIOD")
 INFER_PERIOD: float | None = None
 if _infer_period_raw not in (None, ""):
@@ -52,7 +53,7 @@ if _infer_period_raw not in (None, ""):
     except ValueError as e:
         raise ValueError(f"Invalid INFER_PERIOD={_infer_period_raw!r}, expected float seconds") from e
 
-# Pi0 pretrained model: 20 Hz for UR5e → 0.05s/step.
+# pi0 pretrained ur5e runs at 20 Hz, so 0.05s per action step
 HOLD_PER_STEP = float(os.environ.get("HOLD_PER_STEP", "0.05"))
 HORIZON_STEPS = int(os.environ.get("HORIZON_STEPS", "10"))
 
@@ -69,24 +70,25 @@ DRY_RUN = os.environ.get("DRY_RUN", "0") == "1"
 GRIPPER_PORT = int(os.environ.get("GRIPPER_PORT", str(_defaults.ROBOTIQ_PORT)))
 USE_GRIPPER = os.environ.get("USE_GRIPPER", "1") == "1"
 GRIPPER_DEBOUNCE = float(os.environ.get("GRIPPER_DEBOUNCE", "0.02"))
-# Binarize gripper at this threshold; empty = continuous 0–1.
+# binarize the gripper command at this threshold, empty means use the raw 0..1
 GRIPPER_THRESHOLD = os.environ.get("GRIPPER_THRESHOLD", "")
 
 SHOW_IMAGES = os.environ.get("SHOW_IMAGES", "1") == "1"
 
-# Camera exposure: RS_EXPOSURE base, RS_WRIST_EXPOSURE wrist; RS_AUTO_EXPOSURE=0 → manual.
-RS_AUTO_EXPOSURE = os.environ.get("RS_AUTO_EXPOSURE", "")  # "" = don't touch, "0" disable, "1" enable
-RS_EXPOSURE = os.environ.get("RS_EXPOSURE", "")  # "" = don't touch
-RS_WRIST_EXPOSURE = os.environ.get("RS_WRIST_EXPOSURE", "")  # "" = use RS_EXPOSURE
+# per-camera exposure, RS_EXPOSURE for base and RS_WRIST_EXPOSURE for wrist
+RS_AUTO_EXPOSURE = os.environ.get("RS_AUTO_EXPOSURE", "")  # "" leaves it alone, "0" disables auto, "1" forces auto
+RS_EXPOSURE = os.environ.get("RS_EXPOSURE", "")  # "" means don't touch the base exposure
+RS_WRIST_EXPOSURE = os.environ.get("RS_WRIST_EXPOSURE", "")  # "" falls back to RS_EXPOSURE
 
-# Inference recording dir; empty = off.
+# where to dump per-step inference recordings, empty means don't record
 RECORD_DIR = os.environ.get("RECORD_DIR", "")
 
-# Dual-policy override: arm from main policy, gripper (dim 6) from a second server.
+# optional second policy that takes over the gripper dimension while the main
+# policy still drives the arm
 GRIPPER_POLICY_HOST = os.environ.get("GRIPPER_POLICY_HOST", "")
 GRIPPER_POLICY_PORT = int(os.environ.get("GRIPPER_POLICY_PORT", "8001"))
 
-# OpenCV GUI capability probe.
+# probe whether OpenCV can actually open a window before we try mid-loop
 _has_gui = False
 if SHOW_IMAGES:
     display = os.environ.get("DISPLAY")
@@ -96,7 +98,7 @@ if SHOW_IMAGES:
     else:
         print(f"INFO: DISPLAY={display}", file=sys.stderr)
         
-        # OpenCV build must include GTK or QT for cv2.imshow.
+        # cv2.imshow needs the OpenCV build to include GTK or QT
         try:
             build_info = cv2.getBuildInformation()
             has_gtk = False
@@ -114,7 +116,7 @@ if SHOW_IMAGES:
                 print("WARNING: OpenCV compiled without GUI support (no GTK/QT). Image preview disabled.", file=sys.stderr)
                 print("WARNING: The opencv-python wheel may not have GUI support. Consider rebuilding with GUI support.", file=sys.stderr)
             else:
-                # Probe with a throwaway window.
+                # confirm by opening a throwaway window
                 try:
                     test_img = np.zeros((10, 10, 3), dtype=np.uint8)
                     cv2.namedWindow("_test", cv2.WINDOW_NORMAL)
@@ -134,7 +136,7 @@ if SHOW_IMAGES:
                         print("WARNING: Check X11 forwarding: xhost +local:docker and -v /tmp/.X11-unix:/tmp/.X11-unix:ro", file=sys.stderr)
         except Exception as e:
             print(f"WARNING: Could not check OpenCV build info: {e}", file=sys.stderr)
-            # Probe directly.
+            # probe directly anyway
             try:
                 test_img = np.zeros((10, 10, 3), dtype=np.uint8)
                 cv2.namedWindow("_test", cv2.WINDOW_NORMAL)
@@ -150,7 +152,8 @@ if SHOW_IMAGES:
 
 def _process_bgr(bgr: np.ndarray) -> np.ndarray:
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    # 256→224 path matches training (recording saves 256x256, model ResizeImages 224).
+    # recording saves 256x256 and the model's ResizeImages crops to 224, matching
+    # that two-step path here keeps the interpolation identical to training
     rgb = image_tools.resize_with_pad(rgb, 256, 256)
     return image_tools.convert_to_uint8(rgb)
 
@@ -164,7 +167,7 @@ def _start_rgb(serial: str, *, exposure_override: str = "") -> "rs.pipeline | No
     cfg.enable_stream(rs.stream.color, RS_W, RS_H, rs.format.bgr8, RS_FPS)
     prof = pipe.start(cfg)
 
-    # Per-camera exposure override (wrist may differ from base).
+    # wrist often needs a different exposure than the base camera
     exposure_val = exposure_override if exposure_override else RS_EXPOSURE
     try:
         for s in prof.get_device().sensors:
@@ -192,9 +195,10 @@ def _start_rgb(serial: str, *, exposure_override: str = "") -> "rs.pipeline | No
 
 
 def _read_rgb(pipe: "rs.pipeline") -> np.ndarray | None:
-    """Latest frame; drains stale buffered frames after long inference."""
+    """Read the latest frame, draining any stale ones the buffer accumulated
+    during the previous inference call."""
     frame = None
-    # Drain to latest.
+    # poll until empty, keeping only the most recent frame
     while True:
         try:
             frames = pipe.poll_for_frames()
@@ -205,7 +209,7 @@ def _read_rgb(pipe: "rs.pipeline") -> np.ndarray | None:
                 break
         except Exception:
             break
-    # Fallback: blocking read.
+    # fall back to a blocking read if polling produced nothing
     if frame is None:
         frames = pipe.wait_for_frames(RS_TIMEOUT_MS)
         frame = frames.get_color_frame()
@@ -234,9 +238,9 @@ def _move_to_reset_position(
     while time.time() - t0 < timeout_sec:
         current_q = np.asarray(rcv.getActualQ(), dtype=np.float64)
         dist = float(np.linalg.norm(current_q - target_q))
-        if dist < 0.05:  # ~3° tolerance.
+        if dist < 0.05:  # ~3 deg tolerance
             print(f"Moved to reset position (error: {np.degrees(dist):.2f} deg)")
-            time.sleep(0.5)  # Settle.
+            time.sleep(0.5)  # let it settle
             return
         time.sleep(0.1)
 
@@ -246,7 +250,7 @@ def _move_to_reset_position(
 
 
 def main() -> None:
-    global _has_gui  # Disabled below if X11 drops mid-session.
+    global _has_gui  # disabled below if X11 drops mid-session
 
     print("=" * 60)
     print("Initializing UR5 Robot Bridge")
@@ -257,7 +261,7 @@ def main() -> None:
     wrist_cam = _start_rgb(RS_WRIST, exposure_override=RS_WRIST_EXPOSURE)
     if base_cam is not None or wrist_cam is not None:
         print("OK")
-        time.sleep(1.0)  # Stream warm-up.
+        time.sleep(1.0)  # let the stream warm up
     else:
         print("SKIPPED (FAKE_CAM or no cameras configured)")
 
@@ -272,7 +276,7 @@ def main() -> None:
     print("OK")
     time.sleep(0.5)
 
-    # Optional secondary server for dim-6 gripper predictions.
+    # optional second server takes over the gripper dimension
     gripper_client = None
     if GRIPPER_POLICY_HOST:
         print(f"Connecting to GRIPPER policy at {GRIPPER_POLICY_HOST}:{GRIPPER_POLICY_PORT}...", end=" ", flush=True)
@@ -310,7 +314,7 @@ def main() -> None:
         print("Initializing Robotiq Gripper...", end=" ", flush=True)
         try:
             gripper = RobotiqGripperHelper(UR_IP)
-            time.sleep(1.0)  # Socket connect.
+            time.sleep(1.0)  # wait for the socket to come up
             print("Activating gripper...", end=" ", flush=True)
             gripper.activate()
             time.sleep(5.0)
@@ -370,13 +374,14 @@ def main() -> None:
     time.sleep(0.5)
 
     max_step_rad = np.deg2rad(MAX_STEP_DEG)
-    # state[6] = last commanded gripper (matches recorder's g_cmd; 0.0 = open).
+    # state[6] is the last commanded gripper value, matching what the recorder
+    # stores as g_cmd; 0.0 corresponds to open
     last_gripper: float = 0.0
     infer_step = 0
 
     try:
         while True:
-            # Capture images + state together to minimize desync.
+            # grab images and joint state in the same tick so they don't desync
             t_capture = time.time()
             if FAKE_CAM:
                 rgb_base = np.zeros((224, 224, 3), dtype=np.uint8)
@@ -410,7 +415,7 @@ def main() -> None:
                     bgr_wrist = cv2.cvtColor(rgb_wrist, cv2.COLOR_RGB2BGR)
                     vis = np.hstack([bgr_base, bgr_wrist])
                     cv2.imshow("Base | Wrist (224x224)", vis)
-                    cv2.waitKey(1)  # Non-blocking.
+                    cv2.waitKey(1)  # non-blocking, just lets the window pump events
                 except Exception as e:
                     error_str = str(e).lower()
                     is_x11_error = (
@@ -424,8 +429,8 @@ def main() -> None:
                     )
                     
                     if is_x11_error:
-                        # X11 dropped → disable GUI for session.
-                        if _has_gui:  # Print once.
+                        # X11 dropped, give up on the preview for the rest of the run
+                        if _has_gui:  # print this once
                             _has_gui = False
                             print(
                                 "\n" + "=" * 60,
@@ -448,7 +453,7 @@ def main() -> None:
                                 flush=True
                             )
                     else:
-                        # Non-X11 error; keep trying.
+                        # something else, keep trying
                         if _has_gui:
                             print(f"WARNING: Failed to display image: {e}", file=sys.stderr, flush=True)
             
@@ -464,7 +469,7 @@ def main() -> None:
             t_infer_start = time.time()
             out = client.infer(obs)
 
-            # Optional dual-policy gripper override.
+            # second policy overrides the gripper dimension
             if gripper_client is not None:
                 grip_out = gripper_client.infer(obs)
                 grip_actions = np.asarray(grip_out["actions"], dtype=np.float32)
@@ -517,7 +522,7 @@ def main() -> None:
                 if abs(g - last_gripper) > GRIPPER_DEBOUNCE:
                     if not DRY_RUN and gripper is not None:
                         try:
-                            # Non-blocking: arm continues while gripper moves.
+                            # send the gripper target without blocking the arm loop
                             gripper.send_normalized(g)
                         except Exception as e:
                             print(f"Warning: Gripper move failed: {e}", file=sys.stderr, flush=True)

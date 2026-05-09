@@ -92,7 +92,7 @@ class DataConfig:
     # If true, will use the LeRobot dataset task to define the prompt.
     prompt_from_task: bool = False
 
-    # WeightedRandomSampler multiplier for gripper-transition frames; None = off.
+    # WeightedRandomSampler multiplier for gripper-transition frames, none disables
     gripper_oversample_factor: float | None = None
 
     # Only used for RLDS data loader (ie currently only used for DROID).

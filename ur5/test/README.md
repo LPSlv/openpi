@@ -21,5 +21,5 @@ python ur5/test/camera_test.py
 
 ## Troubleshooting
 
-- **Camera not found** — check USB 3.0 connection, re-run `rs_list.py`
-- **Import errors** — activate the env and `pip install pyrealsense2 ur-rtde numpy opencv-python`
+- **Camera not found.** Check the USB 3.0 connection and re-run `rs_list.py`.
+- **Import errors.** Activate the env and `pip install pyrealsense2 ur-rtde numpy opencv-python`.

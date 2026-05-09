@@ -132,7 +132,7 @@ Hardware defaults live in [`ur5/defaults.py`](../defaults.py) and override via e
 | Base camera | `RS_BASE` | `137322074310` |
 | Wrist camera | `RS_WRIST` | `137322075008` |
 | Gripper port | `ROBOTIQ_PORT` | `63352` |
-| Start position | — | `(-90, -40, -140, -50, 90, 0)` deg |
+| Start position |   | `(-90, -40, -140, -50, 90, 0)` deg |
 
 ## Troubleshooting
 

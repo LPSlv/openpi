@@ -2,7 +2,7 @@
 
 Systematic evaluation of `pi05_ur5_blueblock10-1` across training checkpoints.
 
-For each checkpoint, two evaluation conditions are run. **The prompt is identical in both conditions** — only the blue block's physical location changes.
+For each checkpoint, two evaluation conditions are run. The prompt is identical in both conditions; only the blue block's physical location changes.
 
 > **Prompt (both conditions)**: `Pick up the blue block and place it in the cardboard box`
 
@@ -31,7 +31,7 @@ Each trial is scored across 4 sequential stages. A stage scores **1** if achieve
 Normalized score = sum of stages × 0.25 (range: 0.00 – 1.00).
 Time is recorded as `mm:ss` from trial start to stage completion (blank if stage not reached).
 
-**Aggregate notation.** Avg rows and summary tables report the per-trial **mean (min–max)** across the trials in that cell — e.g., `0.80 (0.50–1.00)` means the mean trial score was 0.80 and observed scores ranged from 0.50 to 1.00. When all trials in a cell scored the same value, only the value is shown (e.g., `0.25`). Min/max is preferred over ±std at this small sample size because it directly reports the worst- and best-case observed performance without assuming a distribution.
+**Aggregate notation.** Avg rows and summary tables report the per-trial mean and (min, max) across the trials in that cell. For example, `0.80 (0.50–1.00)` means the mean trial score was 0.80 and observed scores ranged from 0.50 to 1.00. When all trials in a cell scored the same value, only the value is shown (e.g. `0.25`). Min/max is preferred over ±std at this small sample size because it directly reports the worst- and best-case observed performance without assuming a distribution.
 
 | Stage | Criteria | Points |
 |-------|----------|--------|
@@ -52,7 +52,7 @@ Time is recorded as `mm:ss` from trial start to stage completion (blank if stage
 > **Cardboard box**: kept in its training location for all trials
 > **Block placement**:
 > - **ID**: anywhere inside the ~30 cm × 30 cm area covered by training demos
-> - **OOD**: outside that area — record approximate offset (e.g. `+15 cm beyond right edge`, `far corner`, etc.) per trial in Notes
+> - **OOD**: outside that area; record the approximate offset (e.g. `+15 cm beyond right edge`, `far corner`) per trial in Notes
 
 ### Dataset area reference
 
@@ -82,7 +82,7 @@ docker run --rm -it --gpus=all --network=host --ipc=host \
 > **Checkpoint path**: `checkpoints/pi05_ur5_blueblock10/pi05_ur5_blueblock10-1/90`
 Loss: 0.0101
 
-### ID — block inside training area
+### ID: block inside training area
 
 > **Block placement**: inside the ~30 cm × 30 cm training area
 
@@ -95,7 +95,7 @@ Loss: 0.0101
 | 5   |   0   |  0   |   0  |    0    | 0.00  |         |        |        |           | Stalled ~60 cm from block, no approach |
 | **Avg** | **0/5** | **0/5** | **0/5** | **0/5** | **0.00** |  |  |  |  | No stage reached on any trial |
 
-### OOD — block outside training area
+### OOD: block outside training area
 
 > **Block placement**: outside the ~30 cm × 30 cm training area (record offset per trial in Notes)
 
@@ -117,7 +117,7 @@ Loss: 0.0101
 > **Checkpoint path**: `checkpoints/pi05_ur5_blueblock10/pi05_ur5_blueblock10-1/120`
 Loss: 0.0105
 
-### ID — block inside training area
+### ID: block inside training area
 
 > **Block placement**: inside the ~30 cm × 30 cm training area
 
@@ -130,7 +130,7 @@ Loss: 0.0105
 | 5   |   0   |  0   |   0  |    0    | 0.00  |         |        |        |           | Stopped ~15 cm from block, no closer approach |
 | **Avg** | **0/5** | **0/5** | **0/5** | **0/5** | **0.00** |  |  |  |  | No stage reached on any trial |
 
-### OOD — block outside training area
+### OOD: block outside training area
 
 > **Block placement**: outside the ~30 cm × 30 cm training area (record offset per trial in Notes)
 
@@ -152,7 +152,7 @@ Loss: 0.0105
 > **Checkpoint path**: `checkpoints/pi05_ur5_blueblock10/pi05_ur5_blueblock10-1/150`
 Loss: 0.0085
 
-### ID — block inside training area
+### ID: block inside training area
 
 > **Block placement**: inside the ~30 cm × 30 cm training area
 
@@ -165,7 +165,7 @@ Loss: 0.0085
 | 5   |   1   |  1   |   0  |    0    | 0.5   |   01:18 |  3:01   |        |           |   Bad grasp resulted in drop while transporting  |
 | **Avg** | **5/5** | **5/5** | **4/5** | **2/5** | **0.80 (0.50–1.00)** | **0:57** | **2:37** | **1:00** | **2:08** | Times averaged over trials reaching each stage (n = 5, 5, 4, 2) |
 
-### OOD — block outside training area
+### OOD: block outside training area
 
 > **Block placement**: outside the ~30 cm × 30 cm training area (record offset per trial in Notes)
 
@@ -187,7 +187,7 @@ Loss: 0.0085
 > **Checkpoint path**: `checkpoints/pi05_ur5_blueblock10/pi05_ur5_blueblock10-1/180`
 Loss: 0.0071
 
-### ID — block inside training area
+### ID: block inside training area
 
 > **Block placement**: inside the ~30 cm × 30 cm training area
 
@@ -200,7 +200,7 @@ Loss: 0.0071
 | 5   |   1   |  1   |   1  |    0    | 0.75  |   0:42  |  0:50  |   1:01 |           |       |
 | **Avg** | **5/5** | **4/5** | **4/5** | **0/5** | **0.65 (0.25–0.75)** | **0:36** | **0:41** | **0:58** |  | Times averaged over trials reaching each stage (n = 5, 4, 4, 0) |
 
-### OOD — block outside training area
+### OOD: block outside training area
 
 > **Block placement**: outside the ~30 cm × 30 cm training area (record offset per trial in Notes)
 
@@ -223,7 +223,7 @@ Loss: 0.0071
 > **Checkpoint path**: `checkpoints/pi05_ur5_blueblock10/pi05_ur5_blueblock10-1/210`
 Loss: 0.0084
 
-### ID — block inside training area
+### ID: block inside training area
 
 > **Block placement**: inside the ~30 cm × 30 cm training area
 
@@ -236,7 +236,7 @@ Loss: 0.0084
 | 5   |   1   |  1   |   1  |    0    | 0.75  |  00:35  |  00:31 | 01:06  |           |       |
 | **Avg** | **5/5** | **5/5** | **5/5** | **0/5** | **0.75** | **0:38** | **0:26** | **1:05** |  | Times averaged over trials reaching each stage (n = 5, 5, 5, 0) |
 
-### OOD — block outside training area
+### OOD: block outside training area
 
 > **Block placement**: outside the ~30 cm × 30 cm training area (record offset per trial in Notes)
 
@@ -255,7 +255,7 @@ Loss: 0.0084
 
 ## Summary
 
-Per-stage times are means over trials that reached each stage (blank if no trial reached that stage). Score format: mean (min–max); single value when all trials scored the same.
+Per-stage times are means over trials that reached each stage (blank if no trial reached that stage). Score format is `mean (min–max)`, with a single value when all trials scored the same.
 
 | Ckpt | Cond | Score             | Reach | Pick | Drop | Release | t_reach | t_pick | t_drop | t_release |
 |------|------|-------------------|-------|------|------|---------|---------|--------|--------|-----------|
@@ -270,7 +270,7 @@ Per-stage times are means over trials that reached each stage (blank if no trial
 | 210  | ID   | 0.75              | 5/5   | 5/5  | 5/5  | 0/5     | 0:38    | 0:26   | 1:05   |           |
 | 210  | OOD  | 0.25              | 5/5   | 0/5  | 0/5  | 0/5     | 0:52    |        |        |           |
 
-**Overall conclusions**: _fill in after evaluation complete — best checkpoint, ID vs OOD gap, failure modes, recommended checkpoint for deployment._
+**Overall conclusions**: _fill in after evaluation complete: best checkpoint, ID vs OOD gap, failure modes, recommended checkpoint for deployment._
 
 ---
 
@@ -280,10 +280,10 @@ Fixed-checkpoint sweep varying how many predicted action-chunk steps the bridge 
 
 > **Checkpoint**: `pi05_ur5_blueblock10-1/150` (best from the checkpoint sweep above)
 > **Varying**: `HORIZON_STEPS` ∈ `{3, 6, 9, 12, 15}` (15 = full action chunk; model was trained with `action_horizon=15`)
-> **Condition**: ID only — blue block inside the ~30 cm × 30 cm training area
+> **Condition**: ID only, blue block inside the ~30 cm × 30 cm training area
 > **Trials per horizon**: 5
 > **Scoring**: same 4-stage rubric (0.25 per stage); times not recorded for this sweep
-> **All other settings**: match `ur5/docker/serve_policy_robot.Dockerfile` defaults (HOLD_PER_STEP=0.1, MAX_STEP_DEG=3.0, DT=0.02, VEL=0.5, ACC=0.5, LOOKAHEAD=0.1, GAIN=300) — only `HORIZON_STEPS` changes.
+> **All other settings**: match `ur5/docker/serve_policy_robot.Dockerfile` defaults (HOLD_PER_STEP=0.1, MAX_STEP_DEG=3.0, DT=0.02, VEL=0.5, ACC=0.5, LOOKAHEAD=0.1, GAIN=300); only `HORIZON_STEPS` changes.
 
 To run, override `-e HORIZON_STEPS=<N>` on the docker command line. Example:
 
@@ -370,9 +370,9 @@ Mirrors the step 150 ID checkpoint-sweep batch (same checkpoint, same conditions
 
 ---
 
-### Summary — Horizon Sweep (ID, checkpoint 150)
+### Summary: Horizon Sweep (ID, checkpoint 150)
 
-H=6 reuses the step 150 ID checkpoint-sweep batch (same checkpoint, same conditions). Score format: mean (min–max); single value when all trials scored the same.
+H=6 reuses the step 150 ID checkpoint-sweep batch (same checkpoint, same conditions). Score format is `mean (min–max)`, with a single value when all trials scored the same.
 
 | Horizon | Score             | Reach | Pick | Drop | Release |
 |---------|-------------------|-------|------|------|---------|
@@ -382,4 +382,4 @@ H=6 reuses the step 150 ID checkpoint-sweep batch (same checkpoint, same conditi
 | 12      | 0.25              | 5/5   | 0/5  | 0/5  | 0/5     |
 | 15      | 0.25              | 5/5   | 0/5  | 0/5  | 0/5     |
 
-**Horizon conclusions**: _fill in after all 25 trials complete — which horizon gives best score, any horizon-specific failure modes (drift / reactivity tradeoff), recommended HORIZON_STEPS for deployment._
+**Horizon conclusions**: _fill in after all 25 trials complete: which horizon gives best score, any horizon-specific failure modes (drift / reactivity tradeoff), recommended HORIZON_STEPS for deployment._

@@ -28,7 +28,7 @@ import termios
 import tty
 from pathlib import Path
 
-# Ensure repo root is on sys.path so `ur5` is importable when running directly.
+# put the repo root on sys.path so `ur5` resolves when this is run as a script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import cv2
@@ -96,15 +96,14 @@ def _send_urscript(host: str, script: str, *, port: int = 30002, timeout_sec: fl
 
 
 def _enable_freedrive_urscript(ur_ip: str) -> None:
-    """Enable freedrive mode using URScript program."""
-    # First, stop any running script
+    """Enable freedrive via a long-running URScript."""
     try:
         _send_urscript(ur_ip, "stop\n", timeout_sec=1.0)
         time.sleep(0.3)
     except Exception:
         pass
-    
-    # URScript program that enables freedrive mode and keeps it active
+
+    # the script must keep running to hold freedrive on
     script = """def freedrive_program():
     freedrive_mode()
     while True:
@@ -113,12 +112,11 @@ def _enable_freedrive_urscript(ur_ip: str) -> None:
 freedrive_program()
 """
     _send_urscript(ur_ip, script)
-    time.sleep(1.0)  # Give it more time to start and verify
+    time.sleep(1.0)  # give the controller a moment to pick it up
 
 
 def _disable_freedrive_urscript(ur_ip: str) -> None:
-    """Disable freedrive mode by sending a new script that stops freedrive."""
-    # Send a script that ends freedrive mode
+    """End freedrive by pushing a short URScript on top of the holding one."""
     script = """def stop_freedrive():
     end_freedrive_mode()
 end
@@ -128,12 +126,12 @@ stop_freedrive()
         _send_urscript(ur_ip, script)
         time.sleep(0.5)
     except Exception:
-        # If that doesn't work, try sending an empty script to stop the previous one
+        # last resort, just tell the controller to stop
         try:
             _send_urscript(ur_ip, "stop\n")
             time.sleep(0.5)
         except Exception:
-            pass  # User may need to stop manually
+            pass
 
 
 def _move_to_start_position(
@@ -145,28 +143,24 @@ def _move_to_start_position(
     acc: float = 0.3,
     timeout_sec: float = 10.0,
 ) -> None:
-    """Move robot to starting position using RTDE moveJ."""
+    """Move robot to starting position via RTDE moveJ (URScript fallback)."""
     target_q = np.asarray(start_q_rad, dtype=np.float64)
-    
-    # Use RTDE moveJ instead of URScript to avoid script conflicts
+
+    # prefer RTDE moveJ over URScript so we don't conflict with a running script
     success = ctrl.moveJ(start_q_rad, vel, acc)
     if not success:
         print("Warning: moveJ command failed, trying URScript method...")
-        # Fallback to URScript if RTDE moveJ doesn't work
-        script = f'movej({start_q_rad}, a={acc}, v={vel})\n'
+        script = f"movej({start_q_rad}, a={acc}, v={vel})\n"
         _send_urscript(ur_ip, script, timeout_sec=timeout_sec)
-        # Wait a bit for script to start
-        time.sleep(0.5)
-    
-    # Wait for movement to complete
+        time.sleep(0.5)  # let the URScript come up
+
     t0 = time.time()
     while time.time() - t0 < timeout_sec:
         current_q = np.asarray(rcv.getActualQ(), dtype=np.float64)
         dist = float(np.linalg.norm(current_q - target_q))
-        if dist < 0.05:  # ~3 degrees tolerance
+        if dist < 0.05:  # ~3 deg tolerance
             print(f"Moved to start position (error: {np.degrees(dist):.2f} deg)")
-            # Ensure any running script is stopped before proceeding
-            time.sleep(0.2)
+            time.sleep(0.2)  # let the controller quiesce
             return
         time.sleep(0.1)
     
@@ -184,7 +178,6 @@ def _maybe_read_stdin_char() -> str | None:
     if not r:
         return None
     try:
-        # Try to read a single character
         char = sys.stdin.read(1)
         return char.lower() if char else None
     except Exception:
@@ -192,8 +185,7 @@ def _maybe_read_stdin_char() -> str | None:
 
 
 def _maybe_read_stdin_line() -> str | None:
-    """Non-blocking: return a line if available, else None.
-    Falls back to this if character input doesn't work."""
+    """Non-blocking line read; fallback when single-char input isn't usable."""
     if not sys.stdin.isatty():
         return None
     r, _, _ = select.select([sys.stdin], [], [], 0.0)
@@ -202,7 +194,6 @@ def _maybe_read_stdin_line() -> str | None:
     try:
         line = sys.stdin.readline()
         if line:
-            # Strip whitespace and newlines
             line = line.strip()
             return line if line else None
         return None
@@ -220,38 +211,38 @@ class Args:
     # RTDE sampling
     rtde_frequency_hz: float = 125.0
 
-    # Waypoint extraction
+    # waypoint extraction
     settle_sec: float = 0.20
-    # NOTE: freedrive often reports small non-zero joint velocities; 0.03 can be too strict
-    # and result in "only the first waypoint". Use a slightly looser default.
-    vel_norm_thresh: float = 0.06  # rad/s (L2 norm of qd)
-    min_joint_dist: float = float(np.deg2rad(1.0))  # rad (L2 distance between waypoints)
+    # freedrive reports small non-zero joint velocities, so 0.03 is often too
+    # strict and only the first waypoint gets through; 0.06 works in practice
+    vel_norm_thresh: float = 0.06  # rad/s, L2 norm of qd
+    min_joint_dist: float = float(np.deg2rad(1.0))  # rad, L2 distance between waypoints
     min_time_between_waypoints_sec: float = 0.40
 
-    # Optional extra fields
+    # optional extra fields
     record_tcp_pose: bool = True
-    gripper_default: float = 0.0  # logged as metadata; actual gripper actuation is handled in replay
+    gripper_default: float = 0.0  # metadata only; actuation happens in replay
 
-    # Gripper control
-    use_gripper: bool = True  # Enable gripper control via keyboard
+    # gripper control
+    use_gripper: bool = True
     robotiq_port: int = _defaults.ROBOTIQ_PORT
 
-    # Cameras (RealSense) — live preview while recording
+    # realsense cameras for live preview
     rs_base_serial: str = _defaults.RS_BASE_SERIAL
     rs_wrist_serial: str = _defaults.RS_WRIST_SERIAL
     rs_w: int = _defaults.RS_W
     rs_h: int = _defaults.RS_H
     rs_fps: int = _defaults.RS_FPS
 
-    # Safety / UX
+    # safety / UX
     max_seconds: float = 30.0 * 60.0
     print_every_sec: float = 0.5
-    
-    # Starting position (in degrees, will be converted to radians)
+
+    # starting position in degrees, converted to radians at use
     move_to_start: bool = True
     start_position_deg: tuple[float, float, float, float, float, float] = _defaults.START_POSITION_DEG
-    start_move_vel: float = 0.2  # rad/s
-    start_move_acc: float = 0.3  # rad/s^2
+    start_move_vel: float = 0.2
+    start_move_acc: float = 0.3
 
 
 def main(args: Args) -> None:
@@ -277,13 +268,13 @@ def main(args: Args) -> None:
 
     rcv = rtde_receive.RTDEReceiveInterface(args.ur_ip, frequency=args.rtde_frequency_hz)
     ctrl = rtde_control.RTDEControlInterface(args.ur_ip)
-    
-    # Check robot state
+
+    # surface robot mode early so misconfiguration is obvious
     try:
         robot_mode = rcv.getRobotMode()
         safety_mode = rcv.getSafetyMode()
         print(f"Robot mode: {robot_mode}, Safety mode: {safety_mode}")
-        if robot_mode != 7:  # 7 = RUNNING_MODE
+        if robot_mode != 7:  # 7 == RUNNING_MODE
             print(f"Warning: Robot is not in RUNNING mode (current: {robot_mode})")
             print("Robot should be in Remote Control mode for teach mode to work.")
     except Exception as e:
@@ -294,9 +285,8 @@ def main(args: Args) -> None:
     last_wp_time: float | None = None
     stable_since: float | None = None
 
-    # Initialize gripper if enabled
     gripper: RobotiqGripperHelper | None = None
-    use_gripper = args.use_gripper  # Local variable that can be modified
+    use_gripper = args.use_gripper  # may flip to False if init fails
     if args.use_gripper:
         print("Initializing Robotiq Gripper...", end=" ", flush=True)
         try:
@@ -323,7 +313,6 @@ def main(args: Args) -> None:
                 gripper = None
             use_gripper = False
 
-    # Start camera pipelines for live preview
     base_pipe = None
     wrist_pipe = None
     if rs is not None:
@@ -351,7 +340,6 @@ def main(args: Args) -> None:
         print("- Gripper control: Press 'o' (open) or 'c' (close) - no Enter needed!")
         print("  (If that doesn't work, try: 'o' + Enter or 'c' + Enter)\n")
     
-    # Move to starting position if requested
     if args.move_to_start:
         start_q_rad = [float(np.deg2rad(d)) for d in args.start_position_deg]
         print(f"Moving to start position: {args.start_position_deg} degrees")
@@ -364,8 +352,7 @@ def main(args: Args) -> None:
                 vel=args.start_move_vel,
                 acc=args.start_move_acc,
             )
-            # Small delay to ensure movement is complete and controller is ready
-            time.sleep(0.5)
+            time.sleep(0.5)  # let the controller settle before continuing
         except Exception as e:
             print(f"Warning: Failed to move to start position: {e}")
             print("Continuing anyway...")
@@ -381,26 +368,23 @@ def main(args: Args) -> None:
     t_start = time.time()
     last_print = 0.0
     try:
-        # Enable freedrive / teach mode.
-        # (If your UR controller disallows this via RTDE, this may raise.)
-        # Ensure any running script is stopped before enabling teach mode
-        # This is important if we used URScript for moving to start position
+        # clear any running script before enabling teach mode, otherwise the
+        # start-position URScript can keep ownership of the controller
         try:
-            # Send a stop command to clear any running scripts
             _send_urscript(args.ur_ip, "stop\n")
             time.sleep(0.3)
         except Exception:
-            pass  # Ignore if this fails
-        
+            pass
+
         print("Enabling teach/freedrive mode...")
         teach_mode_enabled = False
-        
-        # Try RTDE method first
+
+        # try the RTDE API first
         try:
-            if hasattr(ctrl, 'teachMode'):
+            if hasattr(ctrl, "teachMode"):
                 result = ctrl.teachMode()
                 if result:
-                    print("✓ Teach mode enabled successfully via RTDE.")
+                    print("Teach mode enabled via RTDE.")
                     teach_mode_enabled = True
                 else:
                     print("RTDE teachMode() returned False, trying URScript...")
@@ -408,26 +392,24 @@ def main(args: Args) -> None:
                 print("teachMode() method not available, trying URScript...")
         except Exception as e:
             print(f"RTDE teachMode() failed: {e}, trying URScript...")
-        
-        # If RTDE didn't work, try URScript
+
+        # fall back to URScript
         if not teach_mode_enabled:
             try:
                 print("Enabling freedrive mode via URScript...")
                 _enable_freedrive_urscript(args.ur_ip)
-                # Verify freedrive is enabled by checking if we can read robot state
-                # Give it a moment to activate
                 time.sleep(0.5)
                 try:
-                    # Try to read robot state - if freedrive is active, this should work
+                    # if the read works, freedrive is up
                     _ = rcv.getActualQ()
-                    print("✓ Freedrive mode enabled via URScript.")
+                    print("Freedrive mode enabled via URScript.")
                     print("You should now be able to move the robot manually.")
                     teach_mode_enabled = True
                 except Exception as e:
                     print(f"Warning: Could not verify freedrive mode: {e}")
                     print("Freedrive script was sent, but verification failed.")
                     print("The robot may still be in freedrive mode - try moving it manually.")
-                    teach_mode_enabled = True  # Assume it worked if script was sent
+                    teach_mode_enabled = True  # script was sent, assume it took
             except Exception as e:
                 print(f"Error: Failed to enable freedrive mode: {e}")
                 print("\nTroubleshooting:")
@@ -436,7 +418,7 @@ def main(args: Args) -> None:
                 print("  3. Verify robot is not in a protective stop or error state")
                 print("  4. Try manually enabling freedrive mode from the teach pendant")
                 raise
-        
+
         if not teach_mode_enabled:
             raise RuntimeError("Could not enable teach/freedrive mode via any method")
 
@@ -446,24 +428,22 @@ def main(args: Args) -> None:
                 print(f"Reached max_seconds={args.max_seconds:.1f}; stopping.")
                 break
 
-            # Handle keyboard input - try character input first, then line input
+            # try single-char input first, fall back to line input
             char_input = _maybe_read_stdin_char()
             line_input = None
             if char_input is None:
                 line_input = _maybe_read_stdin_line()
-            
+
             user_input = char_input if char_input is not None else line_input
             if user_input is not None:
                 user_input_lower = user_input.lower().strip()
-                
-                # Skip empty input (just Enter pressed) - don't stop on it
+
+                # ignore a bare Enter so the user doesn't accidentally stop
                 if not user_input_lower or user_input_lower in ["\n", "\r"]:
                     continue
-                
-                # Debug: show what was received
+
                 print(f"[DEBUG: Received input: '{user_input_lower}']")
-                
-                # Handle gripper commands
+
                 if use_gripper and gripper is not None:
                     if user_input_lower == "o":
                         try:
@@ -487,10 +467,8 @@ def main(args: Args) -> None:
                         print("Stopping on user request (quit command).")
                         break
                     else:
-                        # Unknown command - show help but don't stop
                         print(f"Unknown command: '{user_input_lower}'. Use 'o' (open), 'c' (close), or Ctrl+C to stop.")
                 else:
-                    # Check if user tried to use gripper commands when gripper is not available
                     if user_input_lower in ["o", "c"]:
                         print(f"Gripper command '{user_input_lower}' ignored: gripper is not available.")
                         print("  (Gripper initialization failed or --no-use-gripper was used)")
@@ -526,17 +504,15 @@ def main(args: Args) -> None:
                         if args.record_tcp_pose:
                             tcp = np.asarray(rcv.getActualTCPPose(), dtype=np.float64)  # (6,)
                             wp["tcp_pose"] = tcp.tolist()
-                        # Record gripper position if gripper is available
                         if use_gripper and gripper is not None:
                             try:
                                 gripper_pos = gripper.get_position_normalized()
                                 wp["gripper"] = float(gripper_pos)
                             except Exception as e:
-                                # If we can't read gripper position, use last known or default
+                                # if the read fails, keep going with the configured default
                                 print(f"Warning: Could not read gripper position: {e}")
                                 wp["gripper"] = args.gripper_default
                         else:
-                            # No gripper available, use default
                             wp["gripper"] = args.gripper_default
                         waypoints.append(wp)
                         last_wp_q = q
@@ -548,7 +524,7 @@ def main(args: Args) -> None:
                             flush=True,
                         )
 
-            # Live camera preview
+            # live camera preview
             if base_pipe is not None or wrist_pipe is not None:
                 base_bgr = _read_rs_bgr(base_pipe) if base_pipe is not None else None
                 wrist_bgr = _read_rs_bgr(wrist_pipe) if wrist_pipe is not None else None
@@ -567,14 +543,12 @@ def main(args: Args) -> None:
     finally:
         print("Disabling teach/freedrive mode...")
         try:
-            # Try RTDE method first
             try:
                 ctrl.endTeachMode()
-                print("✓ Teach mode disabled via RTDE.")
+                print("Teach mode disabled via RTDE.")
             except (AttributeError, Exception):
-                # Fallback to URScript stop
                 _disable_freedrive_urscript(args.ur_ip)
-                print("✓ Freedrive mode disabled via URScript.")
+                print("Freedrive mode disabled via URScript.")
         except Exception as e:
             print(f"Warning: Could not disable teach mode: {e}")
             print("You may need to disable it manually from the teach pendant or press the emergency stop.")

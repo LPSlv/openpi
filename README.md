@@ -28,7 +28,7 @@
 | [`ur5/utils/rtde_utils.py`](ur5/utils/rtde_utils.py) | Wrappers around UR5e RTDE control / receive interfaces |
 | [`ur5/utils/robotiq_gripper.py`](ur5/utils/robotiq_gripper.py) | Robotiq 2F gripper control via URCap socket (port 63352) |
 | [`ur5/defaults.py`](ur5/defaults.py) | Hardware defaults (robot IP, camera serials, joint limits) |
-| [`ur5/scripts/`](ur5/scripts/) | Recording, conversion, smoothing, evaluation, diagnostics scripts (see [`ur5/scripts/README.md`](ur5/scripts/README.md)) |
+| [`ur5/scripts/`](ur5/scripts/) | Recording, conversion, evaluation, and diagnostics scripts |
 | [`ur5/test/`](ur5/test/) | Hardware sanity tests (camera list, dual-camera preview) |
 | [`ur5/docker/serve_policy_robot.Dockerfile`](ur5/docker/serve_policy_robot.Dockerfile) | GPU Docker image for combined policy server + robot bridge |
 | [`ur5/docs/`](ur5/docs/) | All thesis-side documentation, including `papers/` PDFs |

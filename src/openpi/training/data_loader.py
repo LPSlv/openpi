@@ -134,11 +134,10 @@ def _compute_gripper_oversample_weights(
     gripper_dim: int = 6,
     transition_threshold: float = 0.3,
 ) -> torch.Tensor:
-    """Per-sample weights for oversampling gripper transition frames.
+    """Per-sample weights for gripper-transition frames.
 
-    Frames whose action chunk (window of action_horizon steps) contains a
-    gripper transition get oversample_factor weight; others get 1.0. Reads
-    the raw HF dataset directly to avoid loading images.
+    Transition frames get oversample_factor weight; others 1.0.
+    Scans the raw HF dataset (no image loading).
     """
     n = len(dataset)
     weights = torch.ones(n)
@@ -368,8 +367,7 @@ def create_torch_data_loader(
     """
     dataset = create_torch_dataset(data_config, action_horizon, model_config)
 
-    # Compute sample weights before applying transforms — transforms may change
-    # the action format, and raw dataset access skips image loading.
+    # Sample weights computed pre-transform: transforms can change action format.
     gripper_sampler = None
     if data_config.gripper_oversample_factor is not None:
         logging.info(

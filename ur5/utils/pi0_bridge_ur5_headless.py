@@ -89,7 +89,7 @@ RS_AUTO_EXPOSURE = os.environ.get("RS_AUTO_EXPOSURE", "")  # "" = don't touch, "
 RS_EXPOSURE = os.environ.get("RS_EXPOSURE", "")  # "" = don't touch, base camera exposure
 RS_WRIST_EXPOSURE = os.environ.get("RS_WRIST_EXPOSURE", "")  # "" = same as RS_EXPOSURE, otherwise wrist-specific
 
-# When set, saves each inference observation + action to disk for offline replay.
+# Inference recording dir; empty = off.
 RECORD_DIR = os.environ.get("RECORD_DIR", "")
 
 # ---- Dual-policy gripper override ----
@@ -167,9 +167,7 @@ if SHOW_IMAGES:
 
 def _process_bgr(bgr: np.ndarray) -> np.ndarray:
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    # Match the training pipeline: recording saves 256x256 JPEGs and the model's
-    # ResizeImages(224, 224) transform downscales from there. Resizing directly
-    # to 224 here skips that intermediate step and changes the interpolation path.
+    # 256→224 path matches training (recording saves 256x256, model ResizeImages 224).
     rgb = image_tools.resize_with_pad(rgb, 256, 256)
     return image_tools.convert_to_uint8(rgb)
 
@@ -183,7 +181,7 @@ def _start_rgb(serial: str, *, exposure_override: str = "") -> "rs.pipeline | No
     cfg.enable_stream(rs.stream.color, RS_W, RS_H, rs.format.bgr8, RS_FPS)
     prof = pipe.start(cfg)
 
-    # exposure_override lets the wrist camera use a different exposure than the base.
+    # Per-camera exposure override (wrist may differ from base).
     exposure_val = exposure_override if exposure_override else RS_EXPOSURE
     try:
         for s in prof.get_device().sensors:

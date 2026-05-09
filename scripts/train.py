@@ -192,7 +192,7 @@ def train_step(
         **diagnostics,
     }
 
-    # Per-dimension gradient norms at the final action projection.
+    # Per-dim grad norms at action_out_proj.
     path_leaves, _ = jax.tree_util.tree_flatten_with_path(grads)
     for path, v in path_leaves:
         path_str = "/".join(str(p) for p in path)
@@ -282,7 +282,7 @@ def main(config: _config.TrainConfig):
             stacked_infos = common_utils.stack_forest(infos)
             reduced_info = jax.device_get(jax.tree.map(jnp.mean, stacked_infos))
 
-            # Fraction of the current batch whose action chunk contains a gripper transition.
+            # Batch gripper-transition fraction.
             batch_actions = batch[1]  # (batch, horizon, action_dim)
             if hasattr(batch_actions, "shape") and batch_actions.ndim == 3 and batch_actions.shape[-1] >= 7:
                 gripper_col = batch_actions[:, :, 6]  # (batch, horizon)

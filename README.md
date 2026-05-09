@@ -1,3 +1,33 @@
+# UR5 Fork of OpenPI
+
+> This is a fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi)
+> adapted for **UR5e robot arm** research. All UR5-specific code, scripts, and
+> documentation live under [`ur5/`](ur5/README.md).
+
+## UR5 Quick Links
+
+| What | Where |
+|------|-------|
+| UR5 overview and directory map | [`ur5/README.md`](ur5/README.md) |
+| Getting started from scratch | [`ur5/docs/quickstart.md`](ur5/docs/quickstart.md) |
+| Data recording pipeline | [`ur5/docs/data_pipeline.md`](ur5/docs/data_pipeline.md) |
+| Training guide | [`ur5/docs/training.md`](ur5/docs/training.md) |
+| Docker deployment | [`ur5/docs/deployment.md`](ur5/docs/deployment.md) |
+| Experiment lab notebook | [`ur5/docs/experiments.md`](ur5/docs/experiments.md) |
+| Research report | [`ur5/docs/research_report.md`](ur5/docs/research_report.md) |
+
+### UR5-specific source files in the OpenPI tree
+
+- [`src/openpi/policies/ur5_policy.py`](src/openpi/policies/ur5_policy.py) -- UR5Inputs / UR5Outputs transforms
+- [`src/openpi/training/config.py`](src/openpi/training/config.py) -- UR5 training configs (`pi0_ur5`, `pi05_ur5`, etc.)
+- [`examples/ur5/`](examples/ur5/) -- example environment, inference entry point, and README
+
+---
+
+*Original OpenPI README follows below.*
+
+---
+
 # openpi
 
 openpi holds open-source models and packages for robotics, published by the [Physical Intelligence team](https://www.physicalintelligence.company/).

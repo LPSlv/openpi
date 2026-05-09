@@ -34,7 +34,7 @@ uv pip install pyrealsense2 ur-rtde numpy opencv-python
 Then list connected cameras:
 
 ```bash
-python local/test/rs_list.py
+python ur5/test/rs_list.py
 ```
 
 Note the serial number for `RS_BASE`.
@@ -103,15 +103,15 @@ docker run --rm -it \
   --name openpi-robot \
   -e RS_BASE=137322074310 \
   -e RS_WRIST=137322075008 \
-  -e PROMPT="pick up the blue block and place it in the cardboard box" \
-  -e INFER_PERIOD=0.8 \
-  -e HORIZON_STEPS=16 \
+  -e PROMPT="Pick up the blue block and place it in the cardboard box" \
+  -e HOLD_PER_STEP=0.1 \
+  -e HORIZON_STEPS=15 \
   -e MAX_STEP_DEG=3.0 \
-  -e DT=0.05 \
-  -e VEL=0.08 \
-  -e ACC=0.15 \
-  -e LOOKAHEAD=0.15 \
-  -e GAIN=200 \
+  -e DT=0.02 \
+  -e VEL=0.5 \
+  -e ACC=0.5 \
+  -e LOOKAHEAD=0.1 \
+  -e GAIN=300 \
   openpi_robot
 
 
@@ -216,7 +216,7 @@ docker run --rm -it \
   - If it still fails, the container often runs as `root`, so allow root explicitly: `xhost +SI:localuser:root`
 - **No GUI / SSH session**: if you’re SSH’d into the machine without X forwarding, there is no local X server for `cv2.imshow`. Either enable X forwarding (slower) or run headless with `-e SHOW_IMAGES=0`.
 - **Wayland**: ensure XWayland is available and `$DISPLAY` is set (try `echo $DISPLAY` on the host). If needed, force an X11 display like `-e DISPLAY=:0`.
-- **Headless OpenCV inside the container**: if you see `WARNING: OpenCV compiled without GUI support (no GTK/QT)`, your container is importing a headless OpenCV build. Rebuild the image after updating `local/docker/serve_policy_robot.Dockerfile` (it now removes `opencv-python-headless`).
+- **Headless OpenCV inside the container**: if you see `WARNING: OpenCV compiled without GUI support (no GTK/QT)`, your container is importing a headless OpenCV build. Rebuild the image after updating `ur5/docker/serve_policy_robot.Dockerfile` (it now removes `opencv-python-headless`).
 - **Check container warnings**: the UR5 bridge prints warnings like “DISPLAY not set”, “OpenCV compiled without GUI support”, or “X11 connection test failed” to stderr at startup.
 
 **Enabling X11 Access:**
@@ -249,7 +249,7 @@ Save as `launch_robot.sh`:
 #!/bin/bash
 cd /home/ims/openpi
 
-docker build -t openpi_robot -f local/docker/serve_policy_robot.Dockerfile .
+docker build -t openpi_robot -f ur5/docker/serve_policy_robot.Dockerfile .
 
 RUN_DEVICES="$(for d in /dev/video*; do [ -e "$d" ] && printf -- '--device=%s ' "$d"; done)"
 
@@ -259,4 +259,36 @@ docker rm -f openpi-robot 2>/dev/null || true
 ```
 
 Run with: `chmod +x launch_robot.sh && ./launch_robot.sh`
-docker run --rm -it --gpus=all --network=host --ipc=host --device=/dev/bus/usb:/dev/bus/usb $RUN_DEVICES --group-add video -v "$PWD":/app -v /tmp/.X11-unix:/tmp/.X11-unix:ro -e DISPLAY=$DISPLAY -e QT_X11_NO_MITSHM=1 --name openpi-robot -e RS_BASE=137322074310 -e RS_WRIST=137322075008 -e PROMPT="pick up the the red mug 10cm from the table" -e INFER_PERIOD=0.3 -e HORIZON_STEPS=3 -e HOLD_PER_STEP=0.1 openpi_robot
+
+## Building the Docker Image
+
+```bash
+docker build -t openpi_robot -f ur5/docker/serve_policy_robot.Dockerfile .
+```
+
+## Environment Variable Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UR_IP` | `192.10.0.11` | Robot IP address |
+| `RS_BASE` | *(required)* | Base camera serial number |
+| `RS_WRIST` | *(optional)* | Wrist camera serial (if unset, base is used for both views) |
+| `PROMPT` | `"pick up the grey shaker bottle"` | Language instruction for the policy |
+| `INFER_PERIOD` | `0.3` | Seconds between policy calls |
+| `HORIZON_STEPS` | `8` | Number of action steps per policy call |
+| `HOLD_PER_STEP` | *derived* | Seconds to hold each action step (`INFER_PERIOD / HORIZON_STEPS` if unset) |
+| `ACTION_MODE` | `delta` | `"delta"` or `"absolute"` |
+| `DT` | `0.008` | ServoJ time step (seconds) |
+| `VEL` | `0.5` | Joint velocity limit (rad/s) |
+| `ACC` | `0.5` | Joint acceleration limit (rad/s^2) |
+| `LOOKAHEAD` | `0.15` | ServoJ lookahead time (seconds) |
+| `GAIN` | `100` | ServoJ proportional gain |
+| `MAX_STEP_DEG` | `3.0` | Max per-joint step size (degrees) |
+| `VERIFY_NORM_STATS` | `0` | Set to `1` to log normalization stats for debugging |
+| `SHOW_IMAGES` | `1` | Set to `0` for headless mode (no camera preview window) |
+| `ROBOTIQ_PORT` | `63352` | Gripper URCap socket port |
+| `GRIPPER_DEBOUNCE` | `0.1` | Gripper command debounce time (seconds) |
+| `DRY_RUN` | `0` | Set to `1` to skip sending commands to the robot |
+| `FAKE_CAM` | `0` | Set to `1` for synthetic images (no cameras needed) |
+| `SERVER_ARGS` | *(see Dockerfile)* | Arguments passed to the policy server |
+| `SERVER_WAIT` | `6` | Seconds to wait for policy server startup |

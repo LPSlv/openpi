@@ -17,7 +17,7 @@ Raw episode format (one folder per episode):
     images/wrist/000000.jpg
 
 Example:
-  uv run python local/scripts/ur5_replay_and_record_raw.py \
+  uv run python ur5/scripts/ur5_replay_and_record_raw.py \
     --ur_ip 192.10.0.11 \
     --waypoints_path raw_episodes/ur5_freedrive_.../waypoints.json \
     --rs_base_serial <SERIAL> --rs_wrist_serial <SERIAL> \
@@ -31,16 +31,29 @@ import datetime as _dt
 import json
 import os
 import socket
+import sys
 import time
 from pathlib import Path
+
+# Ensure repo root is on sys.path so `ur5` is importable when running directly.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import cv2
 import numpy as np
 import rtde_control
 import rtde_receive
 import tyro
-import threading
-from collections import OrderedDict
+
+from ur5 import defaults as _defaults
+from ur5.utils.robotiq_gripper import RobotiqGripperHelper
+from ur5.utils.rtde_utils import (
+    safe_disconnect as _safe_disconnect,
+    teardown_rtde_control as _teardown_rtde_control,
+    ok_to_move,
+    create_rtde_receive as _create_rtde_receive,
+    ensure_rcv,
+    create_rtde_control as _create_rtde_control,
+)
 
 try:
     from openpi_client import image_tools
@@ -93,444 +106,8 @@ try:
 except Exception:  # pragma: no cover
     rs = None  # pyrealsense2 is optional until you use cameras
 
-# Robotiq Hand-E gripper settings (URCap socket service)
-ROBOTIQ_PORT = 63352
-
-
 def _utcnow_iso() -> str:
     return _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-
-
-def _safe_disconnect(obj) -> None:
-    """Safely disconnect an RTDE interface."""
-    try:
-        obj.disconnect()
-    except Exception:
-        pass
-
-
-def _teardown_rtde_control(ctrl: rtde_control.RTDEControlInterface | None) -> None:
-    """Deterministic RTDEControl teardown (best-effort).
-
-    Order:
-    - speedStop() (ignore errors)
-    - stopScript() if available (ignore errors)
-    - disconnect() (ignore errors)
-    """
-    if ctrl is None:
-        return
-    try:
-        if ctrl.isConnected():
-            ctrl.speedStop()
-    except Exception:
-        pass
-    try:
-        stop_script = getattr(ctrl, "stopScript", None)
-        if callable(stop_script):
-            stop_script()
-    except Exception:
-        pass
-    try:
-        _safe_disconnect(ctrl)
-    except Exception:
-        pass
-
-
-def ok_to_move(rcv: rtde_receive.RTDEReceiveInterface) -> bool:
-    """Check if robot is ready to move (mode RUNNING, safety NORMAL)."""
-    try:
-        mode = rcv.getRobotMode()
-        safety = rcv.getSafetyMode()
-        return (mode == 7) and (safety == 1)
-    except Exception:
-        return False
-
-
-def _create_rtde_receive(host: str, *, frequency: float = 125.0, retries: int = 2) -> rtde_receive.RTDEReceiveInterface:
-    """Create an RTDEReceiveInterface with a simple health check."""
-    last_err: Exception | None = None
-    for _ in range(retries + 1):
-        try:
-            rcv = rtde_receive.RTDEReceiveInterface(host, frequency=frequency)
-            # Give the internal thread a moment to start.
-            time.sleep(0.2)
-            _ = rcv.getActualQ()
-            return rcv
-        except Exception as e:
-            last_err = e
-            time.sleep(0.5)
-    raise RuntimeError(f"RTDE receive connection failed: {last_err}")
-
-
-def ensure_rcv(rcv: rtde_receive.RTDEReceiveInterface | None, host: str) -> rtde_receive.RTDEReceiveInterface:
-    """Ensure RTDE receive is healthy, recreate if needed."""
-    if rcv is None:
-        return _create_rtde_receive(host, frequency=125.0, retries=2)
-    try:
-        _ = rcv.getActualQ()
-        return rcv
-    except Exception:
-        try:
-            _safe_disconnect(rcv)
-        except Exception:
-            pass
-        return _create_rtde_receive(host, frequency=125.0, retries=2)
-
-
-def _create_rtde_control(host: str, *, retries: int = 1) -> rtde_control.RTDEControlInterface:
-    """Create an RTDEControlInterface, with clear errors for common robot-side conflicts."""
-    last_err: Exception | None = None
-    for _ in range(retries + 1):
-        try:
-            ctrl = rtde_control.RTDEControlInterface(host)
-            # Give the control script a moment.
-            time.sleep(0.2)
-            if not ctrl.isConnected():
-                raise RuntimeError("RTDE control script not running / not connected")
-            return ctrl
-        except Exception as e:
-            last_err = e
-            msg = str(e)
-            if "RTDE input registers are already in use" in msg:
-                raise RuntimeError(
-                    "RTDE control cannot start because RTDE input registers are in use.\n"
-                    "On the teach pendant disable Fieldbus adapters that reserve registers:\n"
-                    "- Installation -> Fieldbus -> EtherNet/IP (disable)\n"
-                    "- Installation -> Fieldbus -> PROFINET (disable)\n"
-                    "- Installation -> Fieldbus -> MODBUS (disable any units)\n"
-                    "Then fully reboot the robot controller and retry.\n"
-                    "Also ensure no other RTDE client is connected."
-                ) from e
-            time.sleep(0.8)
-    raise RuntimeError(f"RTDE control connection failed: {last_err}")
-
-
-class RobotiqGripperSocket:
-    """Robotiq gripper control via URCap socket service (port 63352)."""
-
-    # WRITE VARIABLES (also readable)
-    ACT = "ACT"
-    GTO = "GTO"
-    ATR = "ATR"
-    ADR = "ADR"
-    FOR = "FOR"
-    SPE = "SPE"
-    POS = "POS"
-
-    # READ VARIABLES
-    STA = "STA"  # 0 reset, 1 activating, 3 active
-    PRE = "PRE"
-    OBJ = "OBJ"
-    FLT = "FLT"
-
-    ENCODING = "UTF-8"
-
-    def __init__(self, host: str, port: int = ROBOTIQ_PORT, *, socket_timeout: float = 8.0):
-        self.host = host
-        self.port = int(port)
-        self.socket_timeout = float(socket_timeout)
-        self.socket: socket.socket | None = None
-        self._lock = threading.Lock()
-        self._rx_buf = bytearray()
-
-    def connect(self) -> None:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(self.socket_timeout)
-            s.connect((self.host, self.port))
-            self.socket = s
-        except Exception as e:
-            raise ConnectionError(f"Failed to connect to Robotiq socket at {self.host}:{self.port}: {e}") from e
-
-    def disconnect(self) -> None:
-        if self.socket is None:
-            return
-        try:
-            self.socket.close()
-        finally:
-            self.socket = None
-            self._rx_buf.clear()
-
-    def _recv_line(self) -> str:
-        """Receive a single \\n-terminated line (stripped).
-        
-        Also handles responses without newline (e.g., "ack" without \\n).
-        Uses short timeouts per recv() call to avoid blocking for full socket timeout.
-        """
-        if self.socket is None:
-            raise ConnectionError("Robotiq socket not connected")
-        
-        # Check if we already have a complete line
-        nl = self._rx_buf.find(b"\n")
-        if nl != -1:
-            line = bytes(self._rx_buf[:nl])
-            del self._rx_buf[: nl + 1]
-            return line.decode(self.ENCODING, errors="replace").strip()
-        
-        # Check if buffer contains "ack" without newline (common case)
-        if len(self._rx_buf) > 0:
-            buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-            if buf_str == "ack":
-                self._rx_buf.clear()
-                return "ack"
-        
-        # Use shorter timeout per recv() call to avoid blocking for full 8s
-        recv_timeout = 0.5  # 500ms per recv() call
-        original_timeout = self.socket.gettimeout()
-        
-        try:
-            self.socket.settimeout(recv_timeout)
-            t0 = time.time()
-            grace_period = 0.1  # 100ms grace period for newline after receiving data
-            
-            while True:
-                # Check for newline
-                nl = self._rx_buf.find(b"\n")
-                if nl != -1:
-                    line = bytes(self._rx_buf[:nl])
-                    del self._rx_buf[: nl + 1]
-                    return line.decode(self.ENCODING, errors="replace").strip()
-                
-                # Check if buffer contains "ack" (with or without newline)
-                if len(self._rx_buf) > 0:
-                    buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-                    if "ack" in buf_str:
-                        # If we have "ack" and grace period expired, return it
-                        if time.time() - t0 > grace_period:
-                            self._rx_buf.clear()
-                            return "ack"
-                
-                # Try to receive more data with short timeout
-                try:
-                    chunk = self.socket.recv(1024)
-                    if not chunk:
-                        raise ConnectionError("Robotiq socket closed by peer")
-                    self._rx_buf.extend(chunk)
-                    t0 = time.time()  # Reset grace period when we receive data
-                except socket.timeout:
-                    # If we have "ack" in buffer and timeout, return it
-                    if len(self._rx_buf) > 0:
-                        buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-                        if "ack" in buf_str:
-                            self._rx_buf.clear()
-                            return "ack"
-                    # Otherwise, raise timeout - caller can handle it
-                    raise
-        finally:
-            # Restore original timeout
-            self.socket.settimeout(original_timeout)
-
-    def _send_and_recv_line(self, cmd: str) -> str:
-        if self.socket is None:
-            raise ConnectionError("Robotiq socket not connected")
-        with self._lock:
-            self.socket.sendall(cmd.encode(self.ENCODING))
-            return self._recv_line()
-
-    @staticmethod
-    def _is_ack(line: str) -> bool:
-        """Check if response contains 'ack' (handles variations with/without newline)."""
-        return "ack" in line.strip().lower()
-
-    def _set_vars(self, var_dict: "OrderedDict[str, int]") -> None:
-        # Edge-trigger fix: set GTO 0 first if GTO is in the command, then set all vars with GTO 1
-        # Do NOT call _set_var() here to avoid infinite recursion - send directly
-        if self.GTO in var_dict:
-            line0 = self._send_and_recv_line("SET GTO 0\n")
-            if not self._is_ack(line0):
-                raise RuntimeError(f"Robotiq SET GTO 0 not acknowledged: {line0!r}")
-            time.sleep(0.02)
-        
-        cmd = "SET"
-        for variable, value in var_dict.items():
-            cmd += f" {variable} {int(value)}"
-        cmd += "\n"
-        line = self._send_and_recv_line(cmd)
-        if not self._is_ack(line):
-            raise RuntimeError(f"Robotiq SET not acknowledged: {line!r}")
-
-    def _set_var(self, variable: str, value: int) -> None:
-        self._set_vars(OrderedDict([(variable, int(value))]))
-
-    def _get_var(self, variable: str) -> int:
-        line = self._send_and_recv_line(f"GET {variable}\n")
-        parts = line.split()
-        if len(parts) != 2:
-            raise RuntimeError(f"Unexpected GET response: {line!r}")
-        var_name, value_str = parts
-        if var_name != variable:
-            raise RuntimeError(f"Unexpected GET response {line!r}: expected '{variable}'")
-        return int(value_str)
-
-    def _reset(self) -> None:
-        self._set_var(self.ACT, 0)
-        self._set_var(self.ATR, 0)
-        # Wait until ACT=0 and STA=0
-        t0 = time.time()
-        while time.time() - t0 < 5.0:
-            if self._get_var(self.ACT) == 0 and self._get_var(self.STA) == 0:
-                break
-            self._set_var(self.ACT, 0)
-            self._set_var(self.ATR, 0)
-            time.sleep(0.1)  # Reduced polling frequency
-        time.sleep(0.5)
-
-    def is_active(self) -> bool:
-        return self._get_var(self.STA) == 3
-
-    def activate(self) -> None:
-        if self.is_active():
-            return
-        self._reset()
-        self._set_var(self.ACT, 1)
-        # Wait until active (STA=3)
-        t0 = time.time()
-        while time.time() - t0 < 10.0:
-            if self._get_var(self.ACT) == 1 and self._get_var(self.STA) == 3:
-                return
-            time.sleep(0.1)  # Reduced polling frequency
-        raise RuntimeError("Robotiq activation timed out (STA did not reach 3)")
-
-    def move_and_wait(self, position: int, speed: int = 128, force: int = 64) -> None:
-        position = int(np.clip(position, 0, 255))
-        speed = int(np.clip(speed, 0, 255))
-        force = int(np.clip(force, 0, 255))
-        # Send command once
-        self._set_vars(OrderedDict([(self.POS, position), (self.SPE, speed), (self.FOR, force), (self.GTO, 1)]))
-        
-        # Poll lightly with hard deadline to avoid hanging forever on blocking GETs
-        deadline = time.time() + 12.0
-        last_good_obj = None
-        consecutive_failures = 0
-        max_failures = 3  # Allow a few failures before giving up
-        
-        while time.time() < deadline:
-            try:
-                obj = self._get_var(self.OBJ)
-                last_good_obj = obj
-                consecutive_failures = 0  # Reset on success
-                # Primary completion check: OBJ == 3 (at target) or OBJ in {1,2} (stopped due to contact)
-                if obj in (1, 2, 3):
-                    return
-            except Exception:
-                # URCap not responding right now
-                consecutive_failures += 1
-                if consecutive_failures >= max_failures:
-                    # Too many failures in a row - gripper might be stuck or URCap unresponsive
-                    # If we've waited a reasonable time, assume success if no fault
-                    elapsed = time.time() - (deadline - 12.0)
-                    if elapsed > 3.0:  # After 3 seconds, if no response, assume it's working
-                        # Try one more quick check, then give up
-                        try:
-                            flt = self._get_var(self.FLT)
-                            if flt == 0:  # No fault - assume success
-                                return
-                        except Exception:
-                            pass  # Even diagnostics failed, but we've waited long enough
-            time.sleep(0.15)  # Poll every 150ms - reduced from 200ms for faster response
-        
-        # Timeout - try to get diagnostics once (but don't block forever if it fails)
-        try:
-            sta = self._get_var(self.STA)
-            flt = self._get_var(self.FLT)
-            obj = self._get_var(self.OBJ)
-            pre = self._get_var(self.PRE)
-            act = self._get_var(self.ACT)
-            gto = self._get_var(self.GTO)
-            raise RuntimeError(
-                f"Robotiq move timed out after 12s\n"
-                f"Diagnostics: STA={sta}, FLT={flt}, OBJ={obj}, PRE={pre} (target={position}), ACT={act}, GTO={gto}"
-            )
-        except Exception as diag_err:
-            # If diagnostics also fail, just report the last known OBJ value
-            raise RuntimeError(f"Robotiq move timed out. Last OBJ={last_good_obj} (diagnostics failed: {diag_err})")
-
-    def open(self) -> None:
-        self.move_and_wait(0)
-
-    def close(self) -> None:
-        self.move_and_wait(255)
-
-
-class RobotiqGripperHelper:
-    """Helper class for Robotiq gripper control via URCap socket (port 63352)."""
-    
-    def __init__(self, host: str):
-        """Initialize gripper helper.
-        
-        Args:
-            host: Robot IP address
-        """
-        self._gripper = RobotiqGripperSocket(host, ROBOTIQ_PORT)
-        self._gripper.connect()
-    
-    def activate(self) -> None:
-        """Activate the gripper.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.activate()
-    
-    def open(self) -> None:
-        """Open the gripper fully.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.open()
-    
-    def close(self) -> None:
-        """Close the gripper fully.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.close()
-    
-    def move(self, position: int) -> None:
-        """Move gripper to specific position.
-        
-        Args:
-            position: Gripper position (0-255, where 0 is fully open, 255 is fully closed)
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.move_and_wait(position)
-
-    def move_normalized(self, position_01: float) -> None:
-        """Move gripper to normalized position (0.0 = open, 1.0 = closed).
-        
-        Args:
-            position_01: Gripper position normalized to [0.0, 1.0]
-        """
-        position = int(np.clip(position_01 * 255, 0, 255))
-        self.move(position)
-
-    def get_position(self) -> int:
-        """Get current gripper position (0-255, where 0 is fully open, 255 is fully closed).
-        
-        Returns:
-            Current gripper position as integer (0-255)
-        """
-        return self._gripper._get_var(self._gripper.PRE)
-
-    def get_position_normalized(self) -> float:
-        """Get current gripper position normalized (0.0 = open, 1.0 = closed).
-        
-        Returns:
-            Current gripper position normalized to [0.0, 1.0]
-        """
-        pos = self.get_position()
-        return float(pos) / 255.0
-
-    def disconnect(self) -> None:
-        self._gripper.disconnect()
 
 
 def _send_urscript(host: str, script: str, *, port: int = 30002, timeout_sec: float = 3.0) -> None:
@@ -681,14 +258,14 @@ def _parse_gripper_waypoints(s: str) -> list[float] | None:
 
 @dataclasses.dataclass(frozen=True)
 class Args:
-    ur_ip: str = os.environ.get("UR_IP", "192.10.0.11")
+    ur_ip: str = _defaults.UR_IP
     prompt: str = os.environ.get("PROMPT", "bus the table")
 
     # Input waypoints
     waypoints_path: Path = Path("raw_episodes/waypoints.json")
 
     # Output episode folder
-    out_dir: Path = Path(os.environ.get("OUT_DIR", "raw_episodes"))
+    out_dir: Path = Path(_defaults.OUT_DIR)
     episode_id: str = ""
 
     # Replay motion params (URScript moveJ)
@@ -706,8 +283,8 @@ class Args:
     rtde_frequency_hz: float = 125.0
 
     # Cameras (RealSense)
-    rs_base_serial: str = os.environ.get("RS_BASE", "137322074310")
-    rs_wrist_serial: str = os.environ.get("RS_WRIST", "137322075008")
+    rs_base_serial: str = _defaults.RS_BASE_SERIAL
+    rs_wrist_serial: str = _defaults.RS_WRIST_SERIAL
     rs_w: int = int(os.environ.get("RS_W", "640"))
     rs_h: int = int(os.environ.get("RS_H", "480"))
     rs_fps: int = int(os.environ.get("RS_FPS", "30"))
@@ -716,7 +293,7 @@ class Args:
 
     # Dataset recording
     # NOTE: pi0 pretrained model expects 20 Hz for UR5e (see docs/norm_stats.md).
-    fps: float = 20.0
+    fps: float = 10.0
     jpeg_quality: int = 95
 
     # Stop conditions
@@ -732,7 +309,7 @@ class Args:
 
     # Gripper (Robotiq URCap socket server)
     use_gripper: bool = True  # Enable gripper control by default
-    robotiq_port: int = 63352
+    robotiq_port: int = _defaults.ROBOTIQ_PORT
     gripper_default: float = 0.0
     gripper_waypoints: str = ""  # comma-separated list, length == number of waypoints (optional)
     gripper_debounce: float = 0.02

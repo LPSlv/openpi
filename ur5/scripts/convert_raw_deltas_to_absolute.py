@@ -12,8 +12,8 @@ The state values are already absolute and correct, so we just shift them:
 Also updates meta.json action_spec.
 
 Usage:
-  uv run python local/scripts/convert_raw_deltas_to_absolute.py --raw_dir raw_episodes
-  uv run python local/scripts/convert_raw_deltas_to_absolute.py --raw_dir raw_episodes --dry_run
+  uv run python ur5/scripts/convert_raw_deltas_to_absolute.py --raw_dir raw_episodes
+  uv run python ur5/scripts/convert_raw_deltas_to_absolute.py --raw_dir raw_episodes --dry_run
 """
 
 from __future__ import annotations

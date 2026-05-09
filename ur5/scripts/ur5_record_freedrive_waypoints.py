@@ -9,7 +9,7 @@ This script:
 Output is a simple, raw-on-disk format that can be replayed and converted later.
 
 Example:
-  uv run python local/scripts/ur5_record_freedrive_waypoints.py \
+  uv run python ur5/scripts/ur5_record_freedrive_waypoints.py \
     --ur_ip 192.10.0.11 \
     --prompt "pick up the block" \
     --out_dir raw_episodes
@@ -28,384 +28,65 @@ import termios
 import tty
 from pathlib import Path
 
+# Ensure repo root is on sys.path so `ur5` is importable when running directly.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+import cv2
 import numpy as np
 import rtde_control
 import rtde_receive
 import socket
 import tyro
-import threading
-from collections import OrderedDict
 
-# Robotiq Hand-E gripper settings (URCap socket service)
-ROBOTIQ_PORT = 63352
+try:
+    import pyrealsense2 as rs  # type: ignore
+except Exception:
+    rs = None
+
+from ur5 import defaults as _defaults
+from ur5.utils.robotiq_gripper import RobotiqGripperHelper
+from ur5.utils.rtde_utils import (
+    safe_disconnect as _safe_disconnect,
+    teardown_rtde_control as _teardown_rtde_control,
+)
 
 
 def _utcnow_iso() -> str:
     return _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
 
-def _safe_disconnect(obj) -> None:
-    """Safely disconnect an RTDE interface."""
+def _start_rs_rgb(serial: str, *, w: int, h: int, fps: int) -> "rs.pipeline | None":
+    """Start a RealSense RGB pipeline with fixed exposure (matches camera_test.py)."""
+    if not serial:
+        return None
+    if rs is None:
+        raise RuntimeError("pyrealsense2 is not available; install it or set empty serial(s).")
+    pipe = rs.pipeline()
+    cfg = rs.config()
+    cfg.enable_device(serial)
+    cfg.enable_stream(rs.stream.color, w, h, rs.format.bgr8, fps)
+    prof = pipe.start(cfg)
     try:
-        obj.disconnect()
-    except Exception:
-        pass
-
-
-def _teardown_rtde_control(ctrl: rtde_control.RTDEControlInterface | None) -> None:
-    """Deterministic RTDEControl teardown (best-effort).
-
-    Order:
-    - speedStop() (ignore errors)
-    - stopScript() if available (ignore errors)
-    - disconnect() (ignore errors)
-    """
-    if ctrl is None:
-        return
-    try:
-        if ctrl.isConnected():
-            ctrl.speedStop()
-    except Exception:
-        pass
-    try:
-        stop_script = getattr(ctrl, "stopScript", None)
-        if callable(stop_script):
-            stop_script()
-    except Exception:
-        pass
-    try:
-        _safe_disconnect(ctrl)
-    except Exception:
-        pass
-
-
-class RobotiqGripperSocket:
-    """Robotiq gripper control via URCap socket service (port 63352)."""
-
-    # WRITE VARIABLES (also readable)
-    ACT = "ACT"
-    GTO = "GTO"
-    ATR = "ATR"
-    ADR = "ADR"
-    FOR = "FOR"
-    SPE = "SPE"
-    POS = "POS"
-
-    # READ VARIABLES
-    STA = "STA"  # 0 reset, 1 activating, 3 active
-    PRE = "PRE"
-    OBJ = "OBJ"
-    FLT = "FLT"
-
-    ENCODING = "UTF-8"
-
-    def __init__(self, host: str, port: int = ROBOTIQ_PORT, *, socket_timeout: float = 8.0):
-        self.host = host
-        self.port = int(port)
-        self.socket_timeout = float(socket_timeout)
-        self.socket: socket.socket | None = None
-        self._lock = threading.Lock()
-        self._rx_buf = bytearray()
-
-    def connect(self) -> None:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(self.socket_timeout)
-            s.connect((self.host, self.port))
-            self.socket = s
-        except Exception as e:
-            raise ConnectionError(f"Failed to connect to Robotiq socket at {self.host}:{self.port}: {e}") from e
-
-    def disconnect(self) -> None:
-        if self.socket is None:
-            return
-        try:
-            self.socket.close()
-        finally:
-            self.socket = None
-            self._rx_buf.clear()
-
-    def _recv_line(self) -> str:
-        """Receive a single \\n-terminated line (stripped).
-        
-        Also handles responses without newline (e.g., "ack" without \\n).
-        Uses short timeouts per recv() call to avoid blocking for full socket timeout.
-        """
-        if self.socket is None:
-            raise ConnectionError("Robotiq socket not connected")
-        
-        # Check if we already have a complete line
-        nl = self._rx_buf.find(b"\n")
-        if nl != -1:
-            line = bytes(self._rx_buf[:nl])
-            del self._rx_buf[: nl + 1]
-            return line.decode(self.ENCODING, errors="replace").strip()
-        
-        # Check if buffer contains "ack" without newline (common case)
-        if len(self._rx_buf) > 0:
-            buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-            if buf_str == "ack":
-                self._rx_buf.clear()
-                return "ack"
-        
-        # Use shorter timeout per recv() call to avoid blocking for full 8s
-        recv_timeout = 0.5  # 500ms per recv() call
-        original_timeout = self.socket.gettimeout()
-        
-        try:
-            self.socket.settimeout(recv_timeout)
-            t0 = time.time()
-            grace_period = 0.1  # 100ms grace period for newline after receiving data
-            
-            while True:
-                # Check for newline
-                nl = self._rx_buf.find(b"\n")
-                if nl != -1:
-                    line = bytes(self._rx_buf[:nl])
-                    del self._rx_buf[: nl + 1]
-                    return line.decode(self.ENCODING, errors="replace").strip()
-                
-                # Check if buffer contains "ack" (with or without newline)
-                if len(self._rx_buf) > 0:
-                    buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-                    if "ack" in buf_str:
-                        # If we have "ack" and grace period expired, return it
-                        if time.time() - t0 > grace_period:
-                            self._rx_buf.clear()
-                            return "ack"
-                
-                # Try to receive more data with short timeout
-                try:
-                    chunk = self.socket.recv(1024)
-                    if not chunk:
-                        raise ConnectionError("Robotiq socket closed by peer")
-                    self._rx_buf.extend(chunk)
-                    t0 = time.time()  # Reset grace period when we receive data
-                except socket.timeout:
-                    # If we have "ack" in buffer and timeout, return it
-                    if len(self._rx_buf) > 0:
-                        buf_str = self._rx_buf.decode(self.ENCODING, errors="replace").strip().lower()
-                        if "ack" in buf_str:
-                            self._rx_buf.clear()
-                            return "ack"
-                    # Otherwise, raise timeout - caller can handle it
-                    raise
-        finally:
-            # Restore original timeout
-            self.socket.settimeout(original_timeout)
-
-    def _send_and_recv_line(self, cmd: str) -> str:
-        if self.socket is None:
-            raise ConnectionError("Robotiq socket not connected")
-        with self._lock:
-            self.socket.sendall(cmd.encode(self.ENCODING))
-            return self._recv_line()
-
-    @staticmethod
-    def _is_ack(line: str) -> bool:
-        """Check if response contains 'ack' (handles variations with/without newline)."""
-        return "ack" in line.strip().lower()
-
-    def _set_vars(self, var_dict: "OrderedDict[str, int]") -> None:
-        # Edge-trigger fix: set GTO 0 first if GTO is in the command, then set all vars with GTO 1
-        # Do NOT call _set_var() here to avoid infinite recursion - send directly
-        if self.GTO in var_dict:
-            line0 = self._send_and_recv_line("SET GTO 0\n")
-            if not self._is_ack(line0):
-                raise RuntimeError(f"Robotiq SET GTO 0 not acknowledged: {line0!r}")
-            time.sleep(0.02)
-        
-        cmd = "SET"
-        for variable, value in var_dict.items():
-            cmd += f" {variable} {int(value)}"
-        cmd += "\n"
-        line = self._send_and_recv_line(cmd)
-        if not self._is_ack(line):
-            raise RuntimeError(f"Robotiq SET not acknowledged: {line!r}")
-
-    def _set_var(self, variable: str, value: int) -> None:
-        self._set_vars(OrderedDict([(variable, int(value))]))
-
-    def _get_var(self, variable: str) -> int:
-        line = self._send_and_recv_line(f"GET {variable}\n")
-        parts = line.split()
-        if len(parts) != 2:
-            raise RuntimeError(f"Unexpected GET response: {line!r}")
-        var_name, value_str = parts
-        if var_name != variable:
-            raise RuntimeError(f"Unexpected GET response {line!r}: expected '{variable}'")
-        return int(value_str)
-
-    def _reset(self) -> None:
-        self._set_var(self.ACT, 0)
-        self._set_var(self.ATR, 0)
-        # Wait until ACT=0 and STA=0
-        t0 = time.time()
-        while time.time() - t0 < 5.0:
-            if self._get_var(self.ACT) == 0 and self._get_var(self.STA) == 0:
+        for s in prof.get_device().sensors:
+            if s.get_info(rs.camera_info.name) == "RGB Camera":
+                s.set_option(rs.option.enable_auto_exposure, 0)
+                s.set_option(rs.option.exposure, 100.0)
                 break
-            self._set_var(self.ACT, 0)
-            self._set_var(self.ATR, 0)
-            time.sleep(0.1)  # Reduced polling frequency
-        time.sleep(0.5)
-
-    def is_active(self) -> bool:
-        return self._get_var(self.STA) == 3
-
-    def activate(self) -> None:
-        if self.is_active():
-            return
-        self._reset()
-        self._set_var(self.ACT, 1)
-        # Wait until active (STA=3)
-        t0 = time.time()
-        while time.time() - t0 < 10.0:
-            if self._get_var(self.ACT) == 1 and self._get_var(self.STA) == 3:
-                return
-            time.sleep(0.1)  # Reduced polling frequency
-        raise RuntimeError("Robotiq activation timed out (STA did not reach 3)")
-
-    def move_and_wait(self, position: int, speed: int = 128, force: int = 64) -> None:
-        position = int(np.clip(position, 0, 255))
-        speed = int(np.clip(speed, 0, 255))
-        force = int(np.clip(force, 0, 255))
-        
-        # Send command once
-        self._set_vars(OrderedDict([(self.POS, position), (self.SPE, speed), (self.FOR, force), (self.GTO, 1)]))
-        
-        # Poll lightly with hard deadline to avoid hanging forever on blocking GETs
-        deadline = time.time() + 12.0
-        last_good_obj = None
-        consecutive_failures = 0
-        max_failures = 3  # Allow a few failures before giving up
-        
-        while time.time() < deadline:
-            try:
-                obj = self._get_var(self.OBJ)
-                last_good_obj = obj
-                consecutive_failures = 0  # Reset on success
-                # Primary completion check: OBJ == 3 (at target) or OBJ in {1,2} (stopped due to contact)
-                if obj in (1, 2, 3):
-                    return
-            except Exception:
-                # URCap not responding right now
-                consecutive_failures += 1
-                if consecutive_failures >= max_failures:
-                    # Too many failures in a row - gripper might be stuck or URCap unresponsive
-                    # If we've waited a reasonable time, assume success if no fault
-                    elapsed = time.time() - (deadline - 12.0)
-                    if elapsed > 3.0:  # After 3 seconds, if no response, assume it's working
-                        # Try one more quick check, then give up
-                        try:
-                            flt = self._get_var(self.FLT)
-                            if flt == 0:  # No fault - assume success
-                                return
-                        except Exception:
-                            pass  # Even diagnostics failed, but we've waited long enough
-            time.sleep(0.15)  # Poll every 150ms - reduced from 200ms for faster response
-        
-        # Timeout - try to get diagnostics once (but don't block forever if it fails)
-        try:
-            sta = self._get_var(self.STA)
-            flt = self._get_var(self.FLT)
-            obj = self._get_var(self.OBJ)
-            pre = self._get_var(self.PRE)
-            act = self._get_var(self.ACT)
-            gto = self._get_var(self.GTO)
-            raise RuntimeError(
-                f"Robotiq move timed out after 12s\n"
-                f"Diagnostics: STA={sta}, FLT={flt}, OBJ={obj}, PRE={pre} (target={position}), ACT={act}, GTO={gto}"
-            )
-        except Exception as diag_err:
-            # If diagnostics also fail, just report the last known OBJ value
-            raise RuntimeError(f"Robotiq move timed out. Last OBJ={last_good_obj} (diagnostics failed: {diag_err})")
-
-    def open(self) -> None:
-        self.move_and_wait(0)
-
-    def close(self) -> None:
-        self.move_and_wait(255)
+    except Exception:
+        pass
+    return pipe
 
 
-class RobotiqGripperHelper:
-    """Helper class for Robotiq gripper control via URCap socket (port 63352)."""
-    
-    def __init__(self, host: str):
-        """Initialize gripper helper.
-        
-        Args:
-            host: Robot IP address
-        """
-        self._gripper = RobotiqGripperSocket(host, ROBOTIQ_PORT)
-        self._gripper.connect()
-    
-    def activate(self) -> None:
-        """Activate the gripper.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.activate()
-    
-    def open(self) -> None:
-        """Open the gripper fully.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.open()
-    
-    def close(self) -> None:
-        """Close the gripper fully.
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.close()
-    
-    def move(self, position: int) -> None:
-        """Move gripper to specific position.
-        
-        Args:
-            position: Gripper position (0-255, where 0 is fully open, 255 is fully closed)
-        
-        Raises:
-            ConnectionError: If connection to robot fails
-            TimeoutError: If connection times out
-        """
-        self._gripper.move_and_wait(position)
-
-    def move_normalized(self, position_01: float) -> None:
-        """Move gripper to normalized position (0.0 = open, 1.0 = closed).
-        
-        Args:
-            position_01: Gripper position normalized to [0.0, 1.0]
-        """
-        position = int(np.clip(position_01 * 255, 0, 255))
-        self.move(position)
-
-    def get_position(self) -> int:
-        """Get current gripper position (0-255, where 0 is fully open, 255 is fully closed).
-        
-        Returns:
-            Current gripper position as integer (0-255)
-        """
-        return self._gripper._get_var(self._gripper.PRE)
-
-    def get_position_normalized(self) -> float:
-        """Get current gripper position normalized (0.0 = open, 1.0 = closed).
-        
-        Returns:
-            Current gripper position normalized to [0.0, 1.0]
-        """
-        pos = self.get_position()
-        return float(pos) / 255.0
-
-    def disconnect(self) -> None:
-        self._gripper.disconnect()
+def _read_rs_bgr(pipe: "rs.pipeline", *, timeout_ms: int = 100) -> np.ndarray | None:
+    """Non-blocking read of a BGR frame from a RealSense pipeline."""
+    try:
+        frames = pipe.wait_for_frames(timeout_ms)
+        frame = frames.get_color_frame()
+        if not frame:
+            return None
+        return np.asanyarray(frame.get_data())
+    except Exception:
+        return None
 
 
 def _send_urscript(host: str, script: str, *, port: int = 30002, timeout_sec: float = 3.0) -> None:
@@ -531,8 +212,8 @@ def _maybe_read_stdin_line() -> str | None:
 
 @dataclasses.dataclass(frozen=True)
 class Args:
-    ur_ip: str = os.environ.get("UR_IP", "192.10.0.11")
-    out_dir: Path = Path(os.environ.get("OUT_DIR", "raw_episodes"))
+    ur_ip: str = _defaults.UR_IP
+    out_dir: Path = Path(_defaults.OUT_DIR)
     episode_id: str = ""
     prompt: str = os.environ.get("PROMPT", "pick up the blue block and place it in the cardboard box")
 
@@ -540,12 +221,12 @@ class Args:
     rtde_frequency_hz: float = 125.0
 
     # Waypoint extraction
-    settle_sec: float = 0.35
+    settle_sec: float = 0.20
     # NOTE: freedrive often reports small non-zero joint velocities; 0.03 can be too strict
     # and result in "only the first waypoint". Use a slightly looser default.
     vel_norm_thresh: float = 0.06  # rad/s (L2 norm of qd)
-    min_joint_dist: float = float(np.deg2rad(3.0))  # rad (L2 distance between waypoints)
-    min_time_between_waypoints_sec: float = 0.75
+    min_joint_dist: float = float(np.deg2rad(1.0))  # rad (L2 distance between waypoints)
+    min_time_between_waypoints_sec: float = 0.40
 
     # Optional extra fields
     record_tcp_pose: bool = True
@@ -553,7 +234,14 @@ class Args:
 
     # Gripper control
     use_gripper: bool = True  # Enable gripper control via keyboard
-    robotiq_port: int = 63352
+    robotiq_port: int = _defaults.ROBOTIQ_PORT
+
+    # Cameras (RealSense) — live preview while recording
+    rs_base_serial: str = _defaults.RS_BASE_SERIAL
+    rs_wrist_serial: str = _defaults.RS_WRIST_SERIAL
+    rs_w: int = _defaults.RS_W
+    rs_h: int = _defaults.RS_H
+    rs_fps: int = _defaults.RS_FPS
 
     # Safety / UX
     max_seconds: float = 30.0 * 60.0
@@ -561,7 +249,7 @@ class Args:
     
     # Starting position (in degrees, will be converted to radians)
     move_to_start: bool = True
-    start_position_deg: tuple[float, float, float, float, float, float] = (-90.0, -40.0, -140.0, -50.0, 90.0, 0.0)
+    start_position_deg: tuple[float, float, float, float, float, float] = _defaults.START_POSITION_DEG
     start_move_vel: float = 0.2  # rad/s
     start_move_acc: float = 0.3  # rad/s^2
 
@@ -634,6 +322,25 @@ def main(args: Args) -> None:
                     pass
                 gripper = None
             use_gripper = False
+
+    # Start camera pipelines for live preview
+    base_pipe = None
+    wrist_pipe = None
+    if rs is not None:
+        if args.rs_base_serial:
+            print(f"Starting base camera: {args.rs_base_serial}...", end=" ", flush=True)
+            try:
+                base_pipe = _start_rs_rgb(args.rs_base_serial, w=args.rs_w, h=args.rs_h, fps=args.rs_fps)
+                print("OK")
+            except Exception as e:
+                print(f"FAILED: {e}")
+        if args.rs_wrist_serial:
+            print(f"Starting wrist camera: {args.rs_wrist_serial}...", end=" ", flush=True)
+            try:
+                wrist_pipe = _start_rs_rgb(args.rs_wrist_serial, w=args.rs_w, h=args.rs_h, fps=args.rs_fps)
+                print("OK")
+            except Exception as e:
+                print(f"FAILED: {e}")
 
     print(
         "\nUR5 freedrive waypoint recorder\n"
@@ -841,22 +548,19 @@ def main(args: Args) -> None:
                             flush=True,
                         )
 
-            # Periodic status print removed per user request
-            # if now - last_print >= args.print_every_sec:
-            #     stable_for = (now - stable_since) if stable_since is not None else 0.0
-            #     dist_to_last = float(np.linalg.norm(q - last_wp_q)) if last_wp_q is not None else float("nan")
-            #     msg = (
-            #         f"waypoints={len(waypoints):4d}  "
-            #         f"vel_norm={vel_norm:0.4f}  "
-            #         f"stable={int(is_stable)}  "
-            #         f"stable_for={stable_for:0.2f}s  "
-            #         f"dist_last_deg={np.degrees(dist_to_last):0.2f}  "
-            #         f"q_deg={np.degrees(q).round(1)}"
-            #     )
-            #     print(msg, flush=True)
-            #     last_print = now
-
-            time.sleep(0.001)  # RTDEReceive is already rate-limited internally
+            # Live camera preview
+            if base_pipe is not None or wrist_pipe is not None:
+                base_bgr = _read_rs_bgr(base_pipe) if base_pipe is not None else None
+                wrist_bgr = _read_rs_bgr(wrist_pipe) if wrist_pipe is not None else None
+                if base_bgr is not None and wrist_bgr is not None:
+                    cv2.imshow("Base | Wrist", np.hstack([base_bgr, wrist_bgr]))
+                elif base_bgr is not None:
+                    cv2.imshow("Base", base_bgr)
+                elif wrist_bgr is not None:
+                    cv2.imshow("Wrist", wrist_bgr)
+                cv2.waitKey(1)
+            else:
+                time.sleep(0.001)
 
     except KeyboardInterrupt:
         print("\nStopped by user.")
@@ -885,6 +589,17 @@ def main(args: Args) -> None:
                 gripper.disconnect()
         except Exception:
             pass
+        try:
+            if base_pipe is not None:
+                base_pipe.stop()
+        except Exception:
+            pass
+        try:
+            if wrist_pipe is not None:
+                wrist_pipe.stop()
+        except Exception:
+            pass
+        cv2.destroyAllWindows()
 
     out = {
         "prompt": args.prompt,

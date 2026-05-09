@@ -1,12 +1,12 @@
 """
-Convert UR5 raw episodes (recorded by openpi/local/scripts/ur5_replay_and_record_raw.py)
+Convert UR5 raw episodes (recorded by ur5/scripts/ur5_replay_and_record_raw.py)
 to LeRobot format.
 
 This mirrors examples/libero/convert_libero_data_to_lerobot.py, but reads our simple
 raw-on-disk episode folders instead of TFDS/RLDS.
 
 Example:
-  uv run python openpi/local/scripts/convert_ur5_raw_to_lerobot.py \
+  uv run python ur5/scripts/convert_ur5_raw_to_lerobot.py \
     --raw_dir raw_episodes \
     --repo_id your_hf_username/ur5_freedrive \
     --fps 10
@@ -24,8 +24,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 import tyro
-from lerobot.common.datasets.lerobot_dataset import HF_LEROBOT_HOME
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.utils.constants import HF_LEROBOT_HOME
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 
 def _imread_rgb(path: Path) -> np.ndarray:
@@ -52,7 +52,7 @@ def main(
     raw_dir: Path,
     repo_id: str,
     *,
-    fps: int = 20,
+    fps: int = 10,
     robot_type: str = "ur5e",
     push_to_hub: bool = True,
 ) -> None:
@@ -135,7 +135,14 @@ def main(
                     }
                 )
 
+        # Workaround: LeRobot maps shape (1,) features to HF Value (scalar),
+        # but validation stores (1,) numpy arrays. Squeeze to scalars before save.
+        if "gripper" in dataset.episode_buffer:
+            for j in range(len(dataset.episode_buffer["gripper"])):
+                dataset.episode_buffer["gripper"][j] = dataset.episode_buffer["gripper"][j].item()
         dataset.save_episode()
+
+    dataset.finalize()
 
     if push_to_hub:
         print(f"Pushing dataset to Hugging Face Hub: {repo_id}")

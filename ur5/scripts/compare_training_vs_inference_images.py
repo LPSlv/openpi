@@ -31,7 +31,6 @@ def main():
                         help="Dataset frame to compare (-1 = auto-find closest joints)")
     args = parser.parse_args()
 
-    # Load recorded inference step
     rec_dir = pathlib.Path(args.record_dir)
     npz_path = rec_dir / f"step_{args.step:04d}.npz"
     if not npz_path.exists():
@@ -50,7 +49,6 @@ def main():
     print(f"  wrist: {infer_wrist.shape} mean={infer_wrist.mean():.1f} std={infer_wrist.std():.1f}")
     print(f"  state: joints={infer_state[:6].round(4)}, gripper={infer_state[6]:.4f}")
 
-    # Load dataset
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     import einops
     from openpi_client import image_tools
@@ -58,7 +56,7 @@ def main():
     ds = LeRobotDataset(args.dataset)
     print(f"\nDataset: {args.dataset} ({len(ds)} frames)")
 
-    # Find closest frame by joint distance
+    # find the closest dataset frame by joint distance unless one was passed in
     if args.dataset_frame >= 0:
         ds_idx = args.dataset_frame
     else:
@@ -66,7 +64,7 @@ def main():
         infer_joints = infer_state[:6]
         best_dist = float("inf")
         ds_idx = 0
-        for i in range(0, len(ds), max(1, len(ds) // 2000)):  # Sample every Nth frame
+        for i in range(0, len(ds), max(1, len(ds) // 2000)):  # subsample for speed
             sample = ds[i]
             ds_joints = np.array(sample["joints"], dtype=np.float32).reshape(-1)
             dist = np.linalg.norm(ds_joints - infer_joints)
@@ -95,15 +93,14 @@ def main():
     print(f"  wrist: {ds_wrist.shape} mean={ds_wrist.mean():.1f} std={ds_wrist.std():.1f}")
     print(f"  state: joints={ds_joints.round(4)}, gripper={ds_gripper:.4f}")
 
-    # Resize to same size for comparison
+    # match sizes so the comparison grid is uniform
     target_h, target_w = 256, 256
     infer_base_r = image_tools.resize_with_pad(infer_base, target_h, target_w)
     infer_wrist_r = image_tools.resize_with_pad(infer_wrist, target_h, target_w)
     ds_base_r = image_tools.resize_with_pad(ds_base, target_h, target_w)
     ds_wrist_r = image_tools.resize_with_pad(ds_wrist, target_h, target_w)
 
-    # Create comparison grid (2x2): top=inference, bottom=training
-    # Convert to BGR for cv2
+    # 2x2 grid: top row inference, bottom row training (BGR for cv2)
     top = np.hstack([
         cv2.cvtColor(infer_base_r, cv2.COLOR_RGB2BGR),
         cv2.cvtColor(infer_wrist_r, cv2.COLOR_RGB2BGR),
@@ -113,7 +110,6 @@ def main():
         cv2.cvtColor(ds_wrist_r, cv2.COLOR_RGB2BGR),
     ])
 
-    # Add labels
     cv2.putText(top, f"INFERENCE step={args.step} g={infer_state[6]:.3f}", (5, 15),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
     cv2.putText(top, f"mean={infer_base.mean():.0f}", (5, 30),
@@ -130,7 +126,6 @@ def main():
 
     grid = np.vstack([top, bot])
 
-    # Pixel statistics comparison
     print(f"\nPixel statistics comparison:")
     print(f"  {'':20s} {'Inference':>12s} {'Training':>12s} {'Diff':>8s}")
     print(f"  {'Base mean':20s} {infer_base.mean():12.1f} {ds_base.mean():12.1f} {abs(infer_base.mean()-ds_base.mean()):8.1f}")

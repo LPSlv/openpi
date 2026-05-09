@@ -18,14 +18,11 @@ ur5/
     ur5e_diagnostics.py               Hardware diagnostics and norm stats verification
     fix_opencv.sh                     Docker OpenCV reinstall helper
     README.md                         Operational notes, training commands, FFmpeg guide
-    hpc/                              HPC (Slurm + Singularity) job scripts
   utils/
     pi0_bridge_ur5_headless.py        Main inference bridge (RealSense + RTDE + websocket)
   test/
     rs_list.py                        List connected RealSense cameras
     camera_test.py                    Dual-camera live preview
-    ur_read_state.py                  Read UR5 joint state via RTDE
-    ur_test_movement.py               Safe base joint nudge + gripper test
     README.md                         Test scripts setup guide
   docs/
     quickstart.md                     Getting started from scratch

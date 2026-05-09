@@ -81,19 +81,6 @@ rsync -avhP \
   ./checkpoints/pi05_ur5_lora/ur5_blueblock_box_10-2/260/
 ```
 
-## HPC Training (Slurm + Singularity)
-
-For training on HPC clusters, see [`ur5/scripts/hpc/README_singularity_slurm.md`](../scripts/hpc/README_singularity_slurm.md).
-
-Quick summary:
-```bash
-# Compute norm stats
-sbatch ur5/scripts/hpc/slurm_norm_stats.sh
-
-# Train
-sbatch ur5/scripts/hpc/slurm_train.sh
-```
-
 ## Building FFmpeg 7 on HPC
 
 If your HPC system doesn't have FFmpeg 7 (required by PyAV), see the build

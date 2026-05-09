@@ -6,8 +6,6 @@ This directory contains scripts for testing and verifying the hardware setup for
 
 - **`rs_list.py`** - List all connected RealSense cameras and display their serial numbers
 - **`camera_test.py`** - Launch one or two RealSense RGB cameras with live preview
-- **`ur_read_state.py`** - Read and display the current state of a UR robot arm
-- **`ur_test_movement.py`** - Test UR robot movement with a safe base joint nudge
 
 ## Setup
 
@@ -64,20 +62,8 @@ python ur5/test/camera_test.py
 # Press 'q' to quit
 ```
 
-### Test UR Robot
-
-```bash
-# Read robot state (continuous monitoring)
-python ur5/test/ur_read_state.py
-# Press Ctrl+C to stop
-
-# Test robot movement (safe base joint nudge)
-python ur5/test/ur_test_movement.py
-```
-
 ## Troubleshooting
 
 - **Camera not found**: Make sure the camera is connected via USB and run `rs_list.py` to verify it's detected
-- **Robot connection failed**: Check that the robot IP address is correct and the robot is powered on and in Remote Control mode
 - **Import errors**: Make sure the virtual environment is activated and required packages are installed
 

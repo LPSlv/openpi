@@ -1,52 +1,63 @@
-# UR5 Fork of OpenPI
+# Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment
 
-A fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi)
-that adapts the pi0 / pi0.5 / pi0-FAST vision-language-action models to a new
-embodiment (a Universal Robots UR5e arm with a Robotiq Hand-E gripper) and studies
-how well the resulting policy generalizes to scenes outside its training data.
+Vision-language-action (VLA) models promise a single learned policy that adapts to new embodiments from a handful of demonstrations. This work tests that claim end-to-end: Physical Intelligence's **π₀.₅** is fine-tuned on a Universal Robots UR5e for a tabletop pick-and-place task, and the resulting policy is then probed across 17 out-of-distribution conditions using the ⋆-Gen taxonomy to map where it generalises and where it stops working. Adapting the model to the new arm was non-trivial: zero-shot failed and a working policy emerged only after 87 training runs, and generalisation off the training distribution was narrow.
 
-## Research context
+|             |             |             |
+|:-----------:|:-----------:|:-----------:|
+| **87 runs** | **80 %** | **40 %** |
+| to a working policy | in-distribution<br/>task progress | average across<br/>17 OOD conditions |
 
-OpenPI is shipped with checkpoints fine-tuned for arms the authors had on hand
-(ALOHA, Libero, DROID). The thesis this repository accompanies asks two
-questions about that recipe:
+## Results
 
-1. **New embodiment.** Can the same training pipeline be pointed at a UR5e
-   without changing the model architecture, and produce a policy that drives
-   the real robot? The fork keeps pi0 / pi0.5 / pi0-FAST as-is and adds the
-   data, transforms, and runtime glue needed to record episodes on the UR5e,
-   train on them, and execute the resulting policy on hardware.
-2. **Generalization in a new environment.** Once a policy works in-distribution,
-   how does it perform when the target object is moved outside the area
-   covered by training data? The final evaluations sweep checkpoints and
-   compare in-distribution and out-of-distribution success rates on the same
-   pick-and-place task.
+<p align="center">
+  <img src="ur5/docs/figures/eval_rq2_overview.png" alt="Bar chart of task progress across 17 OOD conditions grouped by ⋆-Gen category." width="900">
+  <br><sub>Task progress across 17 out-of-distribution conditions. Dashed line is the in-distribution baseline (80 %).</sub>
+</p>
 
-The pi0 architecture, training loop, and norm-stats pipeline are all upstream.
-What this fork adds is the embodiment layer (recording, conversion, robot
-control) plus a small set of training-config and runtime knobs (gripper
-oversampling, per-dim loss diagnostics, longer checkpoint retention, slice-
-instead-of-pad unnormalization for narrower action dims) that were needed to
-get the small UR5 datasets to converge on the rare gripper transitions.
+**Adaptation was non-trivial.** Zero-shot deployment of the base checkpoint produced no usable behaviour on the UR5e, despite UR5e data being part of the π₀.₅ pre-training mix. Reaching a working policy required 87 training runs across the model variant, fine-tuning method, dataset size, training steps, batch size, learning rate, warm-up, normalisation source, action transform, and inference horizon. The on-robot working window was also narrow in training time: task progress peaked around step 150, and by step 210 the OOD score had already collapsed while the training loss kept falling. The bridge executes *K* = 6 of the *H* = 15 actions π₀.₅ predicts per call; both *K* = 3 and *K* = 15 collapsed to 25 % task progress.
 
-## Where to start
+**The gripper was the dominant failure mode.** The grasp action fired correctly on the training images but not on the live camera feed: the gripper overfits visually well before the rest of the motion converges. Standard mitigations (oversampling gripper transitions, weighting the gripper loss, freezing the visual backbone, stronger image augmentation, threshold gating at inference) did not recover a reliably closing gripper on the robot.
+
+**Generalisation was narrow.** 85 trials across 17 ⋆-Gen conditions; no trial completed release.
+
+- *Held up.* Different gripper (Robotiq 2F-85), raised block, added clutter, and a white block with a matching instruction: all around 75 %, essentially the in-distribution baseline.
+- *Degraded but partial.* New shoulder camera viewpoints (25 to 65 %), different object shapes (45 to 65 %), screwdrivers replacing the block (35 %).
+- *Broke completely.* Either camera covered (0 %), different robot arm (0 %), and a language-conflict scene: *"pick up the white block"* with the trained blue block also in frame went to the blue block on 4 of 5 trials.
+
+Two specifics worth flagging: the wrist camera was markedly more sensitive than the shoulder camera (a 2 cm wrist shift dropped the policy to the reach stage, while a symmetric back-right shoulder shift still reached transport), and language following was weak whenever a trained object was also visible in the scene.
+
+## Setup
+
+UR5e arm, Robotiq Hand-E gripper, two RealSense cameras (one shoulder-mounted at the back-left of the workspace, one on the wrist). π₀.₅ fine-tuned on 10 tele-operated episodes of pick-and-place. Evaluation followed the ⋆-Gen taxonomy: one factor changed at a time, with the rest of the setup held close to training.
+
+|  |  |
+|---|---|
+| **Model** | π₀.₅ (PaliGemma VLM + SigLIP-So400m vision + flow-matching action expert) |
+| **Fine-tune** | Full, 150 steps, batch 16 |
+| **Action transform** | Absolute joint positions, converted to deltas at train/inference |
+| **Normalisation** | Reloaded base UR5e stats (recomputing on 10 episodes broke training) |
+| **Inference horizon** | *K* = 6 of *H* = 15 predicted actions per call |
+| **Observation** | Shoulder camera (back-left) + wrist camera, 2-camera input |
+
+<p align="center">
+  <img src="ur5/docs/figures/eval_rq2_all_images_5wide.png" alt="12 of the 17 OOD test scenes." width="900">
+  <br><sub>12 of the 17 tested conditions, grouped by ⋆-Gen category: visual (blue), visual-behavioural (green), visual-semantic (yellow), visual-semantic-behavioural (purple).</sub>
+</p>
+
+## Code
 
 | Doc | What's there |
 |-----|--------------|
-| [`ur5/README.md`](ur5/README.md) | Layout of the UR5 directory |
 | [`ur5/docs/quickstart.md`](ur5/docs/quickstart.md) | End-to-end workflow: setup, record, train, deploy |
 | [`ur5/docs/training.md`](ur5/docs/training.md) | Training configs, norm stats, lessons learned |
 | [`ur5/docs/deployment.md`](ur5/docs/deployment.md) | Docker policy server and robot bridge |
 | [`ur5/docs/experiments.md`](ur5/docs/experiments.md) | Per-experiment lab notebook |
 | [`ur5/docs/final_evaluations.md`](ur5/docs/final_evaluations.md) | ID vs OOD evaluation results |
-| [`ur5/charts/`](ur5/charts/) | Evaluation figures |
 
-## Where every UR5 change lives
+<details>
+<summary><b>Where every UR5 change lives in the codebase</b></summary>
 
-UR5 code is not all under `ur5/`. The directory holds the new robot-side code,
-but the fork also touches `src/openpi/` (data loader, transforms, training loop,
-serving), `examples/`, `scripts/`, and the dependency manifests. The sections
-below map every file that differs from upstream.
+UR5 code is not all under `ur5/`. The directory holds the new robot-side code, but the fork also touches `src/openpi/` (data loader, transforms, training loop, serving), `examples/`, `scripts/`, and the dependency manifests.
 
 ### 1. UR5 hardware and runtime: `ur5/` (new directory)
 
@@ -59,8 +70,7 @@ below map every file that differs from upstream.
 | [`ur5/scripts/`](ur5/scripts/) | Recording, conversion, evaluation, and diagnostics scripts |
 | [`ur5/test/`](ur5/test/) | Hardware sanity tests (camera list, dual-camera preview) |
 | [`ur5/docker/serve_policy_robot.Dockerfile`](ur5/docker/serve_policy_robot.Dockerfile) | GPU Docker image for combined policy server + robot bridge |
-| [`ur5/docs/`](ur5/docs/) | All thesis-side documentation, including `papers/` PDFs |
-| [`ur5/charts/`](ur5/charts/) | Evaluation figures (PDF + PNG) generated from `eval_charts.ipynb` |
+| [`ur5/docs/`](ur5/docs/) | All thesis-side documentation |
 
 ### 2. UR5 example app: `examples/ur5/`
 
@@ -80,11 +90,7 @@ below map every file that differs from upstream.
 
 ### 4. Training configs: `src/openpi/training/config.py` (modified)
 
-Adds `LeRobotUR5DataConfig` plus the UR5 training configs:
-`pi0_ur5`, `pi05_ur5`, `pi05_ur5_lora`, `pi05_ur5_blueblock10`, `pi0_fast_ur5`.
-
-Key knobs added: `use_delta_action_transform`, `gripper_oversample_factor`,
-dataset asset-id overrides.
+Adds `LeRobotUR5DataConfig` plus the UR5 training configs: `pi0_ur5`, `pi05_ur5`, `pi05_ur5_lora`, `pi05_ur5_blueblock10`, `pi0_fast_ur5`. Key knobs added: `use_delta_action_transform`, `gripper_oversample_factor`, dataset asset-id overrides.
 
 ### 5. Serving and websocket client
 
@@ -93,9 +99,11 @@ dataset asset-id overrides.
 | [`src/openpi/serving/websocket_policy_server.py`](src/openpi/serving/websocket_policy_server.py) | keepalive pings disabled (inference can take longer than the default), and `policy.infer` runs in a thread so the server keeps servicing control frames |
 | [`packages/openpi-client/src/openpi_client/websocket_client_policy.py`](packages/openpi-client/src/openpi_client/websocket_client_policy.py) | matching client-side adjustments |
 
+</details>
+
 ---
 
-*Original OpenPI README follows below.*
+*This repository is a research fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi). The upstream README — model checkpoints, requirements, installation, fine-tuning recipes, PyTorch support, and troubleshooting — follows below.*
 
 ---
 

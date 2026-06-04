@@ -1,6 +1,6 @@
 # Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment
 
-Vision-language-action (VLA) models promise a single learned policy that adapts to new embodiments from a handful of demonstrations. This work tests that claim end-to-end: Physical Intelligence's **π₀.₅** is fine-tuned on a Universal Robots UR5e for a tabletop pick-and-place task, and the resulting policy is then probed across 17 out-of-distribution conditions using the ⋆-Gen taxonomy to map where it generalises and where it stops working. Adapting the model to the new arm was non-trivial: zero-shot failed and a working policy emerged only after 87 training runs, and generalisation off the training distribution was narrow.
+Vision-language-action (VLA) models promise a single learned policy that adapts to new embodiments from a handful of demonstrations. This work tests that claim: Physical Intelligence's **π₀.₅** is fine-tuned on a Universal Robots UR5e for a tabletop pick-and-place task, and the resulting policy is then tested across 17 out-of-distribution conditions using the ⋆-Gen taxonomy to map where it generalises and where it stops working. Adapting the model to the new arm was non-trivial: zero-shot failed and a working policy emerged only after 87 training trials, and generalisation off the training distribution was narrow.
 
 |             |             |             |
 |:-----------:|:-----------:|:-----------:|
@@ -14,7 +14,7 @@ Vision-language-action (VLA) models promise a single learned policy that adapts 
   <br><sub>Task progress across 17 out-of-distribution conditions. Dashed line is the in-distribution baseline (80 %).</sub>
 </p>
 
-**Adaptation was non-trivial.** Zero-shot deployment of the base checkpoint produced no usable behaviour on the UR5e, despite UR5e data being part of the π₀.₅ pre-training mix. Reaching a working policy required 87 training runs across the model variant, fine-tuning method, dataset size, training steps, batch size, learning rate, warm-up, normalisation source, action transform, and inference horizon. The on-robot working window was also narrow in training time: task progress peaked around step 150, and by step 210 the OOD score had already collapsed while the training loss kept falling. The bridge executes *K* = 6 of the *H* = 15 actions π₀.₅ predicts per call; both *K* = 3 and *K* = 15 collapsed to 25 % task progress.
+**Adaptation was non-trivial.** Zero-shot deployment of the base checkpoint produced no usable behaviour on the UR5e, despite UR5e data being part of the π₀.₅ pre-training mix. Reaching a working policy required 87 training trials across the model variant, fine-tuning method, dataset size, training steps, batch size, learning rate, warm-up, normalisation source, action transform, and inference horizon. The on-robot working window was also narrow in training time: task progress peaked around step 150, and by step 210 the OOD score had already collapsed while the training loss kept falling. The bridge executes *K* = 6 of the *H* = 15 actions π₀.₅ predicts per call; both *K* = 3 and *K* = 15 collapsed to 25 % task progress.
 
 **The gripper was the dominant failure mode.** The grasp action fired correctly on the training images but not on the live camera feed: the gripper overfits visually well before the rest of the motion converges. Standard mitigations (oversampling gripper transitions, weighting the gripper loss, freezing the visual backbone, stronger image augmentation, threshold gating at inference) did not recover a reliably closing gripper on the robot.
 
@@ -32,10 +32,10 @@ UR5e arm, Robotiq Hand-E gripper, two RealSense cameras (one shoulder-mounted at
 
 |  |  |
 |---|---|
-| **Model** | π₀.₅ (PaliGemma VLM + SigLIP-So400m vision + flow-matching action expert) |
+| **Model** | π₀.₅ |
 | **Fine-tune** | Full, 150 steps, batch 16 |
 | **Action transform** | Absolute joint positions, converted to deltas at train/inference |
-| **Normalisation** | Reloaded base UR5e stats (recomputing on 10 episodes broke training) |
+| **Normalisation** | Reloaded base UR5e stats |
 | **Inference horizon** | *K* = 6 of *H* = 15 predicted actions per call |
 | **Observation** | Shoulder camera (back-left) + wrist camera, 2-camera input |
 

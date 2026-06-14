@@ -1,30 +1,53 @@
 # Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment
 
+*π₀.₅ fine-tuning, deployment, and generalisation testing on a Universal Robots UR5e (openpi fork).*
+
 Vision-language-action (VLA) models promise a single learned policy that adapts to new embodiments from a handful of demonstrations. This work tests that claim: Physical Intelligence's **π₀.₅** is fine-tuned on a Universal Robots UR5e for a tabletop pick-and-place task, and the resulting policy is then tested across 17 out-of-distribution conditions using the ⋆-Gen taxonomy to map where it generalises and where it stops working. Adapting the model to the new arm was non-trivial: zero-shot failed and a working policy emerged only after 87 training trials, and generalisation off the training distribution was narrow.
 
-|             |             |             |
-|:-----------:|:-----------:|:-----------:|
 | **87 runs** | **80 %** | **40 %** |
+|:-----------:|:-----------:|:-----------:|
 | to a working policy | in-distribution<br/>task progress | average across<br/>17 OOD conditions |
 
 ## Results
+
+**Adaptation was non-trivial.** Zero-shot deployment of the base checkpoint produced no usable behaviour on the UR5e, despite UR5e data being part of the π₀.₅ pre-training mix. Reaching a working policy required 87 training trials across the model variant, fine-tuning method, dataset size, training steps, batch size, learning rate, warm-up, normalisation source, action transform, and inference horizon (full search grid in [`ur5/docs/training.md`](ur5/docs/training.md)). The on-robot working window was narrow in training time: task progress peaked around step 150, and by step 210 the out-of-distribution score had collapsed while the training loss kept falling, so the loss does not reveal the overfitting and each checkpoint has to be checked on the robot. Trial duration also fell on the later checkpoints, as the arm moved more directly to positions it had seen.
+
+<p align="center">
+  <img src="ur5/docs/figures/eval_id_vs_ood.png" alt="Task progress and training loss across training steps." width="430">
+  <img src="ur5/docs/figures/eval_timing.png" alt="Trial duration by stage across training steps." width="430">
+  <br><sub>Across training steps on the 10-episode dataset. Left: in-distribution vs out-of-distribution task progress against training loss; the OOD score collapses at step 210 while the loss keeps falling. Right: trial duration by stage.</sub>
+</p>
+
+**Dataset size and inference horizon mattered too.** More data did not help: task progress was best at 10 episodes and dropped with larger datasets. At deployment, the bridge executes *K* = 6 of the *H* = 15 actions π₀.₅ predicts per call; too few steps disrupt continuous motions such as the grasp and too many follow stale actions, so both *K* = 3 and *K* = 15 collapsed to 25 % task progress (per-experiment notes in [`ur5/docs/experiments.md`](ur5/docs/experiments.md)).
+
+<p align="center">
+  <img src="ur5/docs/figures/eval_horizon.png" alt="Task progress against actions executed per inference call." width="560">
+  <br><sub>Average task progress against actions executed per inference call (<i>K</i>) at the step-150 checkpoint, with <i>K</i> = 15 the full predicted chunk. Best at roughly one third to one half of <i>H</i>.</sub>
+</p>
+
+**Generalisation was narrow.** 85 trials across 17 ⋆-Gen conditions; no trial completed release.
 
 <p align="center">
   <img src="ur5/docs/figures/eval_rq2_overview.png" alt="Bar chart of task progress across 17 OOD conditions grouped by ⋆-Gen category." width="900">
   <br><sub>Task progress across 17 out-of-distribution conditions. Dashed line is the in-distribution baseline (80 %).</sub>
 </p>
 
-**Adaptation was non-trivial.** Zero-shot deployment of the base checkpoint produced no usable behaviour on the UR5e, despite UR5e data being part of the π₀.₅ pre-training mix. Reaching a working policy required 87 training trials across the model variant, fine-tuning method, dataset size, training steps, batch size, learning rate, warm-up, normalisation source, action transform, and inference horizon. The on-robot working window was also narrow in training time: task progress peaked around step 150, and by step 210 the OOD score had already collapsed while the training loss kept falling. The bridge executes *K* = 6 of the *H* = 15 actions π₀.₅ predicts per call; both *K* = 3 and *K* = 15 collapsed to 25 % task progress.
-
-**The gripper was the dominant failure mode.** The grasp action fired correctly on the training images but not on the live camera feed: the gripper overfits visually well before the rest of the motion converges. Standard mitigations (oversampling gripper transitions, weighting the gripper loss, freezing the visual backbone, stronger image augmentation, threshold gating at inference) did not recover a reliably closing gripper on the robot.
-
-**Generalisation was narrow.** 85 trials across 17 ⋆-Gen conditions; no trial completed release.
-
 - *Held up.* Different gripper (Robotiq 2F-85), raised block, added clutter, and a white block with a matching instruction: all around 75 %, essentially the in-distribution baseline.
 - *Degraded but partial.* New shoulder camera viewpoints (25 to 65 %), different object shapes (45 to 65 %), screwdrivers replacing the block (35 %).
 - *Broke completely.* Either camera covered (0 %), different robot arm (0 %), and a language-conflict scene: *"pick up the white block"* with the trained blue block also in frame went to the blue block on 4 of 5 trials.
 
 Two specifics worth flagging: the wrist camera was markedly more sensitive than the shoulder camera (a 2 cm wrist shift dropped the policy to the reach stage, while a symmetric back-right shoulder shift still reached transport), and language following was weak whenever a trained object was also visible in the scene.
+
+## Discussion
+
+**Memorisation, not generalisation.** With this little data the policy memorises far more than it generalises. In-distribution task progress of 80 % against about 40 % across the OOD conditions is close to the roughly 42 % an untuned zero-shot policy reached on matched hardware in independent testing, so fine-tuning at this scale improves the trained condition rather than the general ability to solve the task. The policy treats the camera image as a fixed coordinate frame and does not appear to infer scene geometry, the same viewpoint sensitivity seen elsewhere, where accuracy dropped from 94 % to 16 % under viewpoint changes and from 90 % to 0 % under object-position changes. Language following is weak: when the instruction names one object but a trained object is also in frame, the policy follows the visual prior. The π₀.₅ pre-training data is not released, so co-training was not possible and adaptation relied only on the new demonstrations.
+
+**Practical takeaways.**
+
+- The safe placement zone is small, so do not expect a fine-tuned policy to work outside the position range its data covered.
+- A different gripper works, but a different arm does not.
+- Match the camera viewpoint to the training data closely, especially for the wrist camera.
+- At small data scales, a narrow dataset on the deployment condition is more useful than a varied one.
 
 ## Setup
 
@@ -52,7 +75,6 @@ UR5e arm, Robotiq Hand-E gripper, two RealSense cameras (one shoulder-mounted at
 | [`ur5/docs/training.md`](ur5/docs/training.md) | Training configs, norm stats, lessons learned |
 | [`ur5/docs/deployment.md`](ur5/docs/deployment.md) | Docker policy server and robot bridge |
 | [`ur5/docs/experiments.md`](ur5/docs/experiments.md) | Per-experiment lab notebook |
-| [`ur5/docs/final_evaluations.md`](ur5/docs/final_evaluations.md) | ID vs OOD evaluation results |
 
 <details>
 <summary><b>Where every UR5 change lives in the codebase</b></summary>
@@ -103,9 +125,12 @@ Adds `LeRobotUR5DataConfig` plus the UR5 training configs: `pi0_ur5`, `pi05_ur5`
 
 ---
 
-*This repository is a research fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi). The upstream README — model checkpoints, requirements, installation, fine-tuning recipes, PyTorch support, and troubleshooting — follows below.*
+*This repository is a research fork of [Physical Intelligence's OpenPI](https://github.com/Physical-Intelligence/openpi). The original project README is collapsed below.*
 
----
+<details>
+<summary><b>Upstream openpi README</b> (model checkpoints, requirements, installation, fine-tuning recipes, PyTorch support, troubleshooting)</summary>
+
+<br>
 
 # openpi
 
@@ -430,3 +455,5 @@ We will collect common issues and their solutions here. If you encounter an issu
 | Import errors when running examples       | Make sure you've installed all dependencies with `uv sync`. Some examples may have additional requirements listed in their READMEs.                    |
 | Action dimensions mismatch                | Verify your data processing transforms match the expected input/output dimensions of your robot. Check the action space definitions in your policy classes.                                  |
 | Diverging training loss                            | Check the `q01`, `q99`, and `std` values in `norm_stats.json` for your dataset. Certain dimensions that are rarely used can end up with very small `q01`, `q99`, or `std` values, leading to huge states and actions after normalization. You can manually adjust the norm stats as a workaround. |
+
+</details>

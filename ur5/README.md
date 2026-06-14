@@ -29,7 +29,6 @@ ur5/
     training.md                     training configs, commands, lessons
     deployment.md                   docker bridge + env var reference
     experiments.md                  lab notebook
-    final_evaluations.md            formal evaluation results
     papers/                         pi0.pdf, pi05.pdf
 ```
 

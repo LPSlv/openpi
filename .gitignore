@@ -9,6 +9,9 @@ openpi_ckpt_*/
 ckpt_ur5_*/
 .venv-robot/
 
+# Local-only eval log (untracked on purpose).
+ur5/docs/final_evaluations.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

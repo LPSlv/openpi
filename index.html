@@ -122,20 +122,19 @@ code{font-family:var(--mono);font-size:.86em;background:var(--faint);padding:.1e
 
 /* ── masthead ─────────────────────────────────────────── */
 .masthead{padding:4.2rem 0 2.6rem}
-.subtitle{font-size:1.35rem;line-height:1.4;font-weight:400;color:#454545;
-  margin:0 0 var(--rhythm);text-align:left;hyphens:manual;text-wrap:pretty}
-.abstract{font-size:1.06rem;line-height:1.66;color:#3a3a3a;margin:0 0 calc(var(--rhythm)*1.6)}
-h1{font-size:clamp(2.05rem,1.5rem + 2.2vw,2.93rem);line-height:1.15;font-weight:650;
-  letter-spacing:-.02em;margin:0 0 var(--rhythm);text-wrap:balance;font-feature-settings:'kern' 1}
-.meta{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem .9rem;
-  font-size:.95rem;color:var(--muted);margin:0 0 calc(var(--rhythm)*.8);
-  padding-top:calc(var(--rhythm)*.6);border-top:1px solid var(--rule)}
-.meta > * + *{border-left:1px solid #d9d9d9;padding-left:.9rem}
-.meta .author{color:var(--ink);font-weight:650}
-.meta a{color:var(--muted)}
-.basedon{font-size:.93rem;line-height:1.6;color:var(--muted);margin:0;text-align:left;
-  padding-left:1rem;border-left:2px solid var(--rule)}
-.basedon cite{font-style:italic}
+.standfirst{font-size:1.42rem;line-height:1.38;font-weight:400;color:#2b2b2b;
+  margin:0 0 calc(var(--rhythm)*1.25);text-align:left;hyphens:manual;text-wrap:pretty}
+.byline{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .85rem;
+  font-size:.92rem;color:var(--muted);margin:0 0 calc(var(--rhythm)*1.5);
+  padding:.75rem 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule)}
+.byline > * + *{border-left:1px solid #d9d9d9;padding-left:.85rem}
+.byline .author{color:var(--ink);font-weight:650}
+.byline a{color:var(--muted)}
+.abstract{font-size:1.06em;line-height:1.66;color:var(--ink);margin:0 0 var(--rhythm)}
+.abstract::first-letter{font-size:2.6em;line-height:.86;float:left;font-weight:650;
+  padding:.06em .12em 0 0;color:var(--ink)}
+.provenance{font-size:.92rem;line-height:1.6;color:var(--muted);margin:0;text-align:left}
+.provenance cite{font-style:italic}
 
 /* ── citation box ─────────────────────────────────────── */
 .cite{border:1px solid var(--rule);border-radius:4px;margin:1rem 0 0;background:var(--faint);overflow:hidden}
@@ -155,7 +154,7 @@ h1{font-size:clamp(2.05rem,1.5rem + 2.2vw,2.93rem);line-height:1.15;font-weight:
   border-top:1px solid var(--ink)}
 .grouplabel{font-size:.75rem;letter-spacing:.11em;text-transform:uppercase;
   color:var(--quiet);font-weight:650;margin:0 0 calc(var(--rhythm)*.9);text-align:left}
-figure.hero{margin:calc(var(--rhythm)*2) 0 0}
+figure.hero{margin:0 0 calc(var(--rhythm)*1.4)}
 figure.hero img{border:1px solid var(--rule)}
 .meter{margin:0 0 1.4rem}
 .meter-head{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
@@ -333,20 +332,19 @@ footer cite{font-style:italic}
 <header class="masthead">
   <div class="wrap">
     <h1>87 runs to a working policy</h1>
-    <p class="subtitle">What went wrong, and what went right, putting a vision-language-action model on a robot arm it had never seen, in a room it had never seen.</p>
-    <p class="abstract">This began as a master's thesis, and I started it with no hands-on experience of vision-language-action models. What follows is an honest recap of 8 months: what actually happened, what worked, what did not, and how much of it was never going to turn up in a paper. Research articles report the configuration that worked. They rarely report the runs that did not, the default values that quietly sabotage a small fine-tune, or the settings that sit outside training altogether and still decide whether anything moves. Those are the parts that determine whether a policy runs on your hardware, in your room, so those are the parts this article is about.</p>
-    <div class="meta">
+    <p class="standfirst">What went wrong, and what went right, putting a vision-language-action model on a robot arm it had never seen, in a room it had never seen.</p>
+    <div class="byline">
       <span class="author">Lenards Skrodelis</span>
       <time datetime="2026-08-13">13 August 2026</time>
       <span>29 min read</span>
       <a href="https://github.com/LPSlv/openpi">Code</a>
     </div>
-    <p class="basedon">Based on my master's thesis, <cite>Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment</cite>, Institute of Technology, University of Tartu, 2026. Supervised by Karl Kruusamäe and Agnes Luhtaru.</p>
     <figure class="hero">
       <img src="media/setup-workspace.jpg" alt="The UR5e workspace: arm with Robotiq Hand-E gripper on a 125 by 110 cm board, the shoulder camera on an extrusion pole at the back-left, with the shoulder and wrist camera views inset." loading="eager" width="1800" height="1296">
       <figcaption><b>The whole rig.</b> A UR5e with a Robotiq Hand-E gripper on a 125 × 110 cm board, the shoulder camera on an extrusion pole at the back-left, and the wrist camera on the gripper. The insets are what each camera actually sees, which is the only view the policy ever gets.</figcaption>
     </figure>
-
+    <p class="abstract">This began as a master's thesis, and I started it with no hands-on experience of vision-language-action models. What follows is an honest recap of 8 months: what actually happened, what worked, what did not, and how much of it was never going to turn up in a paper. Research articles report the configuration that worked. They rarely report the runs that did not, the default values that quietly sabotage a small fine-tune, or the settings that sit outside training altogether and still decide whether anything moves. Those are the parts that determine whether a policy runs on your hardware, in your room, so those are the parts this article is about.</p>
+    <p class="provenance">Based on my master's thesis, <cite>Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment</cite>, Institute of Technology, University of Tartu, 2026. Supervised by Karl Kruusamäe and Agnes Luhtaru.</p>
     <div class="rubric">
       <p class="grouplabel">Headline results</p>
       <div class="meter hero">

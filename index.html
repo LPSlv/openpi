@@ -231,7 +231,7 @@ figure.portrait figcaption{max-width:var(--col)}
 /* ── VLA build animation ──────────────────────────────── */
 .vla-build{margin-top:calc(var(--rhythm)*1.6)}
 .vla-stage{position:relative;width:100%;aspect-ratio:1479/688}
-.vla-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+.vla-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;
   opacity:0;transition:opacity .38s ease-out;border:0}
 .vla-stage img.on{opacity:1}
 .vla-steps{display:flex;gap:.5rem;justify-content:center;margin:.6rem 0 0}
@@ -394,9 +394,9 @@ footer cite{font-style:italic}
     <p class="lede">A vision-language-action model is supposed to arrive already knowing how to be a robot. You add a handful of demonstrations, and you point it at your task. The published results do not say that. They say the outcome runs from 0% to 100%, and the papers rarely isolate what decides it.</p>
     <figure class="wide vla-build" aria-label="A vision-language-action model builds on a language model and a vision-language model">
       <div class="vla-stage">
-        <img src="media/vla-step1.jpg" alt="A brain with the prefrontal cortex highlighted, beside a box labelled LLM containing a transformer backbone." class="on" data-step="1">
-        <img src="media/vla-step2.jpg" alt="The same brain with the visual cortex also highlighted, beside a box labelled VLM containing a vision encoder and the LLM." data-step="2">
-        <img src="media/vla-step3.jpg" alt="The brain with the motor cortex highlighted too, beside a box labelled VLA containing the VLM and an action expert producing actions." data-step="3">
+        <img width="1479" height="688" src="media/vla-build-1.jpg" alt="A brain with the prefrontal cortex highlighted, beside a box labelled LLM containing a transformer backbone." class="on" data-step="1">
+        <img width="1479" height="688" src="media/vla-build-2.jpg" alt="The same brain with the visual cortex also highlighted, beside a box labelled VLM containing a vision encoder and the LLM." data-step="2">
+        <img width="1479" height="688" src="media/vla-build-3.jpg" alt="The brain with the motor cortex highlighted too, beside a box labelled VLA containing the VLM and an action expert producing actions." data-step="3">
       </div>
       <div class="vla-steps" role="tablist">
         <button type="button" class="on" data-go="1">Language</button>
@@ -885,12 +885,12 @@ Institute of Technology, University of Tartu.</pre>
   if(!('IntersectionObserver' in window)){ run(); return; }
   var io=new IntersectionObserver(function(es){
     es.forEach(function(e){ if(e.isIntersecting){ io.unobserve(e.target); run(); } });
-  },{threshold:0.15,rootMargin:'0px 0px -12% 0px'});
+  },{threshold:0,rootMargin:'0px 0px 25% 0px'});
   io.observe(fig);
   // if it is already on screen at load, the observer fires immediately;
   // this covers a direct link to the anchor
   var r=fig.getBoundingClientRect();
-  if(r.top < innerHeight*0.85 && r.bottom > 0){ io.unobserve(fig); run(); }
+  if(r.top < innerHeight*1.1 && r.bottom > 0){ io.unobserve(fig); run(); }
 })();
 </script>
 </body>

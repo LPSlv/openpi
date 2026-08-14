@@ -488,21 +488,21 @@ footer cite{font-style:italic}
 
     <p><a href="https://github.com/Physical-Intelligence/openpi/issues/912">Issue 912</a> is the case I keep returning to, because it is my own failure written by someone else. A user fine-tunes π₀.₅, the arm reaches the object and lines up correctly, and then it emits near-zero actions and pushes the object instead of grasping it. Two more people report the identical symptom on their own setups, one of them in simulation. Nobody from Physical Intelligence has ever replied. One commenter offers a plausible hypothesis about gripper normalisation, but never confirms they reproduced or fixed it, and the same account promotes an unrelated tool elsewhere in the tracker. The issue is still open. Across every grasping issue in the tracker, not one reaches a confirmed fix.</p>
 
-    <div class="callout">I spent weeks on gripper behaviour that 3 other people were reporting at the same time. <b>Reading the tracker would have cost me an afternoon. Posting to it would have bought me nothing.</b></div>
+    <div class="callout">I spent weeks on gripper behaviour that 3 other people were reporting at the same time. <b>Reading the tracker would have cost me an afternoon. On these base rates, posting to it would most likely have bought me nothing.</b></div>
   </div>
 </section>
 
 <section id="s3">
   <div class="wrap">
     <h2><span class="n">3.</span> Before any of that: getting the arm to talk to the model</h2>
-    <p class="lede">Every framework I evaluated documents the same 4 steps: install, convert your data, train, serve a policy. The step they all omit is the one between a served action vector and a joint that turns. On a platform the framework supports, that layer already exists. LeRobot's native robot list is small research arms, from SO100 and Koch through to Reachy2 and the Unitree G1, and a UR5e is not on it. So I wrote the layer myself: the recorder, the dataset converter, and the bridge that carries actions to the arm. This section is that layer, in the order I met its problems.</p>
+    <p class="lede">All 3 frameworks I looked at document the same 4 steps: install, convert your data, train, serve a policy. The step they all omit is the one between a served action vector and a joint that turns. On a platform the framework supports, that layer already exists. LeRobot's native robot list is small research arms, from SO100 and Koch through to Reachy2 and the Unitree G1, and a UR5e is not on it. So I wrote the layer myself: the recorder, the dataset converter, and the bridge that carries actions to the arm. This section is that layer, in the order I met its problems.</p>
 
     <h3>The control interface is the first fork</h3>
     <p>I drive the arm over RTDE, the real-time interface Universal Robots provide, and stream joint targets with <code>servoJ</code>. That was not the only option. ROS is the other obvious route, and which one you pick depends on your arm and on what your lab already runs. Decide on day one either way, because the recorder, the bridge and the safety clamp all get written against that choice, and the framework has no opinion about it at all.</p>
 
     <h3>Put the cameras where the model's training data had them</h3>
     <p>Check what the model consumes before you buy anything. π₀.₅ takes RGB only, so the depth stream on my RealSense cameras sits unused. The camera model matters little. The placement matters enormously, and my rule for it is simple: put the cameras where the model's own training data had them. I searched Physical Intelligence's blog posts and papers for photographs of their workspaces, noted where the base and wrist cameras sat and at what angle, and copied that geometry as closely as my table allowed. A fine-tune on 10 episodes will not teach the model a new viewpoint. It works best from one it already knows, and section 7 prices the mistake: a front-left shift of the shoulder camera cut task progress from 0.80 to 0.25, and a 2 cm shift of the wrist camera cut it to 0.25 as well.</p>
-    <p>After the sensor, reuse the framework's own image functions. openpi resizes, pads and reinserts the images at specific points in its pipeline, and any substitute you write there trains cleanly and fails on the robot. I also disabled auto-exposure for the dataset and fixed a separate value per camera. 100 for the base, 150 for the wrist, because exposure that drifts between recording and deployment is distribution shift you chose not to control. Address the cameras by serial number rather than by index, so the base and wrist streams can never swap.</p>
+    <p>After the sensor, reuse the framework's own image functions. openpi resizes, pads and reinserts the images at specific points in its pipeline, and any substitute you write there trains cleanly and fails on the robot. I also disabled auto-exposure for the dataset and fixed a separate value per camera. 100 for the base, 150 for the wrist, because exposure that drifts between recording and deployment is distribution shift you chose not to control. Address the cameras by serial number rather than by index, so replugging a USB port cannot silently swap the base and wrist streams.</p>
 
     <h3>Mounts, cables, and the three lengths of bring-up</h3>
     <p>The shoulder camera stands on an extrusion frame clamped to the table. The wrist camera sits on a 3D-printed bracket, and most of the other fixtures were printed too. Make the shoulder mount rigid, because every millimetre it drifts after recording is unplanned distribution shift. The wrist cable runs zip-tied along the arm and carries two duties that pull against each other: enough bandwidth for the stream, and enough slack for the arm's full reach without a tug at the connector. Plan that cable before the first episode. Mine caused no USB problems, but it is the component most likely to spoil an episode without an error message.</p>
@@ -530,7 +530,7 @@ footer cite{font-style:italic}
     <p>The data and policy config changed the model's behaviour more than any other file I touched, and the correct values are mostly not written anywhere. Use the delta action transform, that area of openpi has carried a series of bugs, and delta is the setting that works. When my gripper refused to close, I oversampled the gripper-transition frames, one of the 7 remedies section 4 accounts for. The rest is understanding the model plus trial and error, and the fastest way to compress it is blunt: point an AI agent at the framework's entire issue tracker and make it report. The tracker is not worth posting to, for the reason section 2 measures. It is very much worth reading, at machine speed.</p>
     <p>If I rebuilt the stack today, I would make it modular and base it on LeRobot rather than write the recorder, converter and bridge as one custom stack against 1 robot. The custom route worked. It is also welded to this arm, and none of it will survive a change of hardware.</p>
 
-    <div class="callout"><b>Go one layer at a time.</b> At the start, when the arm sits there and does nothing, you cannot tell whether you command the robot wrongly, or the policy is broken, or the data is. Every layer fails identically from the outside. I kept two switches in the bridge for exactly this: <code>DRY_RUN=1</code> logs every command without moving the arm, and <code>FAKE_CAM=1</code> runs the loop without cameras, and I recommend verifying each layer alone before you stack the next. Anything else is guessing, and it is the annoying kind.</div>
+    <div class="callout"><b>Go one layer at a time.</b> At the start, when the arm sits there and does nothing, you cannot tell whether you command the robot wrongly, or the policy is broken, or the data is. From the outside every layer fails the same way: the arm does nothing. I kept two switches in the bridge for exactly this: <code>DRY_RUN=1</code> logs every command without moving the arm, and <code>FAKE_CAM=1</code> runs the loop without cameras, and I recommend verifying each layer alone before you stack the next. Anything else is guessing, and it is the annoying kind.</div>
   </div>
 </section>
 
@@ -559,7 +559,7 @@ footer cite{font-style:italic}
     </figure>
 
     <h3>π₀-FAST was the wrong family for this task</h3>
-    <p>π₀-FAST was slow enough at inference to be unusable here, so it left the search early. Its runs also never produced a working gripper, because the <a href="https://arxiv.org/abs/2501.09747">FAST tokenizer</a> compresses action chunks with a discrete cosine transform that handles a step function badly.</p>
+    <p>π₀-FAST was slow enough at inference to be unusable here, so it left the search early. Its runs also never produced a working gripper. The likely reason is that the <a href="https://arxiv.org/abs/2501.09747">FAST tokenizer</a> compresses action chunks with a discrete cosine transform, which handles a step function badly.</p>
 
     <h3>The configuration that worked</h3>
     <div class="recipe">
@@ -590,7 +590,7 @@ footer cite{font-style:italic}
     </figure>
 
     <p>The mechanism is legible in hindsight. Early in training the model learns the structure of the task: reach, grasp, transport, release. Later it memorises the specific joint trajectories that work for the positions in the training set. That is an improvement on those positions and a catastrophe everywhere else. Behaviour-cloning loss measures how closely predicted actions match the demonstrations, so it cannot detect this. Matching the demonstrations more exactly is precisely what overfitting looks like.</p>
-    <p>The same failure appears at its limit in a two-stage experiment. I trained 10,000 steps on a colleague's 800-episode dataset from a different task on a different workstation, then fine-tuned 300 steps on my 10 episodes. The result drove the arm to the same joint configuration on every trial, regardless of where the block sat or what the prompt said. Warm-starting from an earlier stage-one checkpoint changed nothing, so the small second-stage dataset caused it rather than an over-baked first stage.</p>
+    <p>The same failure appears at its limit in a two-stage experiment. I trained 10,000 steps on a colleague's 800-episode dataset from a different task on a different workstation, then fine-tuned 300 steps on my 10 episodes. The result drove the arm to the same joint configuration on every trial, regardless of where the block sat or what the prompt said. Warm-starting from an earlier stage-one checkpoint changed nothing, which points at the small second-stage dataset rather than an over-baked first stage.</p>
     <p>The policy also got faster as it memorised. The mean time to complete the pick fell from 2:37 at step 150 to 0:26 at step 210, because the arm moved directly to positions it had already seen instead of searching for the object.</p>
 
     <figure>
@@ -694,7 +694,7 @@ footer cite{font-style:italic}
       <img src="ur5/docs/figures/eval_rq2_all_images_5wide.png" alt="Grid of twelve photographs showing the out-of-distribution test scenes." loading="lazy">
       <figcaption><b>1 factor changes per scene, everything else is held at training conditions.</b> 12 of the 17 tested conditions, grouped by ⋆-Gen category.</figcaption>
     </figure>
-    <p>Laid out together, the scenes make the failure boundary look arbitrary, and that is the point. Nothing separates the conditions that held up from the ones that collapsed except how far each sits from the 10 episodes the policy was trained on. A human looking at these photographs would call all 17 the same task.</p>
+    <p>Laid out together, the scenes make the failure boundary look arbitrary, and that is the point. What mostly separates the conditions that held up from the ones that collapsed is how far each sits from the 10 episodes the policy was trained on. A human looking at these photographs would call all 17 the same task.</p>
   </div>
 </section>
 

@@ -377,9 +377,10 @@ footer cite{font-style:italic}
         <li><a href="#s4">What actually moved the needle across 87 runs</a></li>
         <li><a href="#s5">The loss curve lied for the whole run</a></li>
         <li><a href="#s6">The setting with no gradient attached to it</a></li>
-        <li><a href="#s7">How narrow the win actually was</a></li>
-        <li><a href="#s8">Open weights, closed everything else</a></li>
-        <li><a href="#s9">Fine-tuning bought the trained condition, not the task</a></li>
+        <li><a href="#s7">How the field measures generalisation, and what it misses</a></li>
+        <li><a href="#s8">How narrow the win actually was</a></li>
+        <li><a href="#s9">Open weights, closed everything else</a></li>
+        <li><a href="#s10">Fine-tuning bought the trained condition, not the task</a></li>
       </ol>
     </nav>
   </div>
@@ -494,19 +495,24 @@ footer cite{font-style:italic}
 <section id="s3">
   <div class="wrap">
     <h2><span class="n">3.</span> Before any of that: getting the arm to talk to the model</h2>
-    <p class="lede">All 3 frameworks I looked at document the same 4 steps: install, convert your data, train, serve a policy. The step they all omit is the one between a served action vector and a joint that turns. On a platform the framework supports, that layer already exists. LeRobot's native robot list is small research arms, from SO100 and Koch through to Reachy2 and the Unitree G1, and a UR5e is not on it. So I wrote the layer myself: the recorder, the dataset converter, and the bridge that carries actions to the arm. This section is that layer, in the order I met its problems.</p>
-
-    <h3>The control interface is the first fork</h3>
-    <p>I drive the arm over RTDE, the real-time interface Universal Robots provide, streaming joint targets with <code>servoJ</code>. ROS is the other obvious route. Decide on day one either way, because the recorder, the bridge and the safety clamp all get written against that choice, and the framework has no opinion about it.</p>
+    <p class="lede">All 3 frameworks I looked at document the same 4 steps: install, convert your data, train, serve a policy. None of them ships the layer between a served action vector and a joint that turns. On a supported platform that layer exists already. A UR5e is not on LeRobot's native list, so I wrote it: the recorder, the converter, and the bridge.</p>
 
     <h3>Put the cameras where the model's training data had them</h3>
-    <p>Check what the model consumes before you buy anything: π₀.₅ takes RGB only, so the depth stream on my cameras sits unused. The camera model matters little. Placement matters enormously, and my rule is simple: put the cameras where the model's own training data had them. I went through Physical Intelligence's blog posts and papers for photographs of their workspaces and copied that geometry as closely as my table allowed. A fine-tune on 10 episodes will not teach the model a new viewpoint. Section 7 prices the mistake: a front-left shift of the shoulder camera cut task progress from 0.80 to 0.25, and 2 cm on the wrist camera did the same.</p>
-    <p>Reuse the framework's own image functions. openpi resizes, pads and reinserts images at specific points, and any substitute you write there trains cleanly and fails on the robot. Disable auto-exposure and fix a value per camera, since exposure drifting between recording and deployment is distribution shift you chose not to control. Address cameras by serial, so replugging a USB port cannot silently swap the streams.</p>
+    <p>This is the most useful thing I did and it took an afternoon. Before mounting anything I went through Physical Intelligence's blog posts and papers for photographs of their workspaces, and copied that geometry as closely as my table allowed. A fine-tune on 10 episodes will not teach the model a new viewpoint. Section 8 prices the mistake: a front-left shift of the shoulder camera cut task progress from 0.80 to 0.25, and 2 cm on the wrist camera did the same. Check whether the model wants RGB or depth before you buy, reuse the framework's own image preprocessing rather than writing your own, and fix the exposure so it cannot drift between recording and deployment.</p>
 
-    <h3>Mounts, cables, and the three lengths of bring-up</h3>
-    <p>The shoulder camera stands on an extrusion frame clamped to the table, the wrist camera on a 3D-printed bracket. Make the shoulder mount rigid: every millimetre it drifts after recording is unintended distribution shift. The wrist cable runs zip-tied along the arm and has to carry the stream while leaving slack for the arm's full reach. Plan it before the first episode. Mine caused no trouble, but it is the part most likely to spoil an episode without an error message.</p>
-    <p>Bring-up came in three stages of very unequal length. The arm moved almost immediately. Good motion took very long. A completed task took very long again, and that escalation, not any single obstacle, is the honest shape of the project. The gripper owns the ugly middle: it does not speak RTDE at all, but listens on its own TCP socket behind a URCap on the pendant. A second protocol on a second connection, for one robot, whose failure mode is silence rather than an error.</p>
-    <p>Learn what normalisation the model expects before you record, because it differs per joint and the gripper follows its own convention. Beyond that almost any gripper serves, and one later result made the point sharply: swapping to a different gripper, with a different stroke and appearance, cost only 5 points (section 7). It appears in every wrist-camera frame the model ever saw, and still it had not bound its behaviour to how its own hand looks.</p>
+    <h3>The gripper is the part that fights you</h3>
+    <p>The arm moved almost immediately. Good motion took very long, and a completed task took very long again. That escalation, not any single obstacle, is the honest shape of the project. The gripper owns the ugly middle: it does not speak RTDE at all, but listens on its own TCP socket behind a URCap on the pendant. A second protocol on a second connection, for one robot, whose failure mode is silence rather than an error. The cable that feeds the wrist camera is the other quiet hazard, since it has to carry the stream while leaving slack for the arm's full reach.</p>
+
+    <h3>Decide where inference runs before you need it to work</h3>
+    <p>The split between training and inference is arithmetic, not preference: openpi wants more than 70 GB of VRAM to fine-tune and more than 8 GB to serve. My 16 GB laptop can serve and cannot train, so training went to a cluster and the policy server ran beside the robot. A rented remote GPU works too, at the price of latency, and the actions-per-call setting has to absorb whatever latency you have. Section 6 shows that setting swinging task progress from 0.25 to 0.80 on identical weights.</p>
+
+    <h3>Recording data without a leader arm</h3>
+    <p>Leader–follower teleoperation is the standard on research arms and an industrial arm ships without one. LeRobot's phone teleoperation is the fallback worth knowing, though it was built for their own small arms and did not work well enough for me. So I hand-guided the arm in freedrive, recorded the trajectory, reset the objects, and replayed it with the cameras running. Slow, and every object has to go back exactly, but the motion is smooth and my body never appears in a training frame. Record absolute actions and convert to deltas, because that conversion is trivial and the reverse is not.</p>
+
+    <h3>Read the issue tracker like documentation</h3>
+    <p>The data and policy config changed behaviour more than any other file I touched, and the correct values are mostly not written down. The fastest way to compress the trial and error is blunt: point an AI agent at the framework's entire issue tracker and make it report. Not worth posting to, for the reason section 2 measures. Very much worth reading, at machine speed. If I rebuilt this today I would make it modular and base it on LeRobot, because the custom stack worked and is welded to one arm.</p>
+
+    <div class="callout"><b>Go one layer at a time.</b> At the start, when the arm sits there and does nothing, you cannot tell whether you are commanding the robot wrongly, or the policy is broken, or the data is. From the outside every layer fails the same way. I kept two switches in the bridge for exactly this: <code>DRY_RUN=1</code> logs every command without moving the arm, and <code>FAKE_CAM=1</code> runs the loop without cameras.</p></div>
 
     <!-- ═══ MEDIA: the two grippers ══════════════════════════════════════
          Files at media/gripper-hande.jpg and media/gripper-2f85.jpg.
@@ -518,18 +524,6 @@ footer cite{font-style:italic}
       <figcaption><b>Trained on the left, tested on the right.</b> Different stroke, different mechanics, different appearance, 5 points of task progress lost.</figcaption>
     </figure>
     ═════════════════════════════════════════════════════════════════════ -->
-
-    <h3>Decide where inference runs before you need it to work</h3>
-    <p>Training and inference rarely share a machine, and the split is arithmetic rather than preference: openpi wants more than 70 GB of VRAM to fine-tune and more than 8 GB to serve. My 16 GB laptop can serve but cannot train, so training went to an HPC cluster and the policy server ran beside the robot. Serving from the cluster failed against its network restrictions. A rented remote GPU works, at the price of latency. My cycle took 241 ms against the 73 ms Physical Intelligence report on an RTX 4090, and the actions-per-call setting has to absorb whatever latency you have. Section 6 shows that setting swinging task progress from 0.25 to 0.80 on identical weights.</p>
-    <h3>Recording data without a leader arm</h3>
-    <p>Leader–follower teleoperation is the standard on research arms and the fastest route to natural motion. An industrial arm ships without a leader. The fallback worth knowing is LeRobot's phone teleoperation, driving the arm from the phone's IMU, though the community built it for LeRobot's own small arms and on my phone it did not work well enough. So I hand-guided the arm in freedrive, recorded the trajectory, reset the objects, and replayed it with the cameras running. Slow, and every object has to go back exactly, but the motion is smooth and my body never appears in a training frame. OpenVLA's documentation recommends the replay half independently, as a way to verify the robot can execute a demonstration at all.</p>
-    <p>2 decisions belong before the first episode. Absolute or delta actions: learn what the model expects, then record absolute and convert, because that conversion is trivial and the reverse is not. And frame synchronisation between cameras and joint stream: I did none, perhaps I should have, and I cannot tell you what it cost me. For the pipeline itself, borrow rather than build. Open X-Embodiment has working conversion code, and Rerun, which LeRobot itself uses to inspect runs, exists because a data-quality problem becomes invisible the moment it is inside a dataset.</p>
-
-    <h3>Read the issue tracker like documentation</h3>
-    <p>The data and policy config changed behaviour more than any other file I touched, and the correct values are mostly not written down. Use the delta action transform: that area of openpi has carried a series of bugs and delta is the setting that works. When my gripper refused to close I oversampled the transition frames, one of the 7 remedies in section 4. The rest is trial and error, and the fastest way to compress it is blunt: point an AI agent at the framework's entire issue tracker and make it report. Not worth posting to, for the reason section 2 measures. Very much worth reading, at machine speed.</p>
-    <p>If I rebuilt the stack today, I would make it modular and base it on LeRobot rather than write the recorder, converter and bridge as one custom stack against 1 robot. The custom route worked. It is also welded to this arm, and none of it will survive a change of hardware.</p>
-
-    <div class="callout"><b>Go one layer at a time.</b> At the start, when the arm sits there and does nothing, you cannot tell whether you command the robot wrongly, or the policy is broken, or the data is. From the outside every layer fails the same way: the arm does nothing. I kept two switches in the bridge for exactly this: <code>DRY_RUN=1</code> logs every command without moving the arm, and <code>FAKE_CAM=1</code> runs the loop without cameras, and I recommend verifying each layer alone before you stack the next. Anything else is guessing, and it is the annoying kind.</div>
   </div>
 </section>
 
@@ -626,7 +620,44 @@ footer cite{font-style:italic}
 
 <section id="s7">
   <div class="wrap">
-    <h2><span class="n">7.</span> How narrow the win actually was</h2>
+    <h2><span class="n">7.</span> How the field measures generalisation, and what it misses</h2>
+    <p class="lede">Before showing where my policy broke, it is worth knowing how anyone else decides whether a policy generalises. The benchmarks trade cost against realism, and the cheap end has a saturation problem.</p>
+
+    <p>LIBERO is the standard simulated suite, and it no longer separates current models: scores sit above 95%. LIBERO-PRO and LIBERO-Plus attack that saturation by perturbing the same scenes, and what they find is that a high LIBERO score can hide a brittle policy. LIBERO-PRO reports a collapse from above 90% to 0% when the object's starting position changes. LIBERO-Plus reports π₀ falling from 94.2% to 15.8% under viewpoint changes. SIMPLER spans 40 to 99% across setups, which makes comparing across papers difficult, and Colosseum's 14 perturbation axes do not always match real-world performance.</p>
+
+    <p class="tcap">Table 3. Where generalisation gets measured.</p>
+      <div class="tscroll">
+        <table>
+        <thead><tr><th>Benchmark</th><th>Type</th><th>What it reports</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://arxiv.org/abs/2306.03310">LIBERO</a></td><td>Sim</td><td>Saturated above 95%, no longer separates models</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO</a></td><td>Sim</td><td>Above 90% → 0% under object-position change</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a></td><td>Sim</td><td>π₀ 94.2% → 15.8% under viewpoint change</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2402.08191">Colosseum</a></td><td>Sim</td><td>14 perturbation axes, sim and real do not always agree</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2503.01238">⋆-Gen</a></td><td>Real</td><td>22-axis taxonomy, 14 tested on hardware, 1,600+ trials</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2510.17950">RoboChallenge</a></td><td>Real</td><td>Fine-tuned π₀.₅ at 43.7% across 30 tasks</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    
+    <p>Testing on real hardware is rarer and more expensive. The ⋆-Gen authors ran more than 1,600 real trials across 14 of their 22 axes in two case studies, Bridge V2 and ALOHA 2, and no model held up reliably on most axes. On RoboChallenge, a real-robot benchmark of 30 tasks that includes a UR5, a fine-tuned π₀.₅ reached 43.7% average success.</p>
+
+    <figure class="small">
+      <img src="media/stargen-results.jpg" alt="Bar chart from the star-Gen paper showing task progress across generalisation axes on Bridge V2, with most axes far below the in-distribution baseline." loading="lazy">
+      <figcaption><b>The same shape at a much larger scale.</b> ⋆-Gen's Bridge V2 results, modified from <a href="https://arxiv.org/abs/2503.01238">Gao et al.</a>, 1,600+ trials across 14 axes.</figcaption>
+    </figure>
+
+    
+    <p>The same axes keep coming out hardest across all of them: object pose, camera viewpoint, and object properties. ⋆-Gen turns that into advice worth following. Behavioural axes, the ones that change the action the robot has to take, are the most informative for a real deployment. Pure visual axes are usually easier and can wait, with one exception: camera viewpoint stays hard. Semantic axes only matter if your deployment actually uses varied language.</p>
+
+    <div class="callout"><b>The gap this article sits in.</b> ⋆-Gen has only been used where the test environment matches the training environment, and where the original pre-training data is mixed back in during fine-tuning. Its authors leave the pure fine-tuning case, adapt to new hardware on your own demonstrations and nothing else, for future work. That is exactly the case I was in, and section 8 is what it looks like.</div>
+  </div>
+</section>
+
+<section id="s8">
+  <div class="wrap">
+    <h2><span class="n">8.</span> How narrow the win actually was</h2>
     <p>A working policy is not the end of the question. The interesting part is where it stops working, so I tested it against 17 out-of-distribution conditions using the <a href="https://arxiv.org/abs/2503.01238">⋆-Gen taxonomy</a>. One factor changes at a time, and everything else stays close to training. Across all 85 trials, not 1 completed the release stage.</p>
 
     <figure class="wide">
@@ -667,29 +698,9 @@ footer cite{font-style:italic}
     ═════════════════════════════════════════════════════════════════════ -->
 
     <p>2 conclusions follow from the shape of that list. The policy treats the camera image as a fixed coordinate frame rather than inferring the geometry of the scene, so any change to the frame moves it off the mapping it learned. And the language instruction is too weak to override the visual prior, because whenever a trained object was in view the policy went to it regardless of the words.</p>
-    <p>Neither finding is unique to my setup. <a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a> reports π₀ dropping from 94.2% to 15.8% under viewpoint changes, and <a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO</a> reports a fall from above 90% to 0% when object starting positions change. Every model the <a href="https://arxiv.org/abs/2503.01238">⋆-Gen authors</a> and the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL group</a> tested showed the same weak semantic generalisation.</p>
+    <p>Neither finding is unique to my setup. Both are among the axes section 7 identifies as hardest across every benchmark, and every model the ⋆-Gen authors and the Penn PAL group tested showed the same weak semantic generalisation.</p>
 
-<figure class="small">
-      <img src="media/stargen-results.jpg" alt="Bar chart from the star-Gen paper showing task progress across generalisation axes on Bridge V2, with most axes far below the in-distribution baseline." loading="lazy">
-      <figcaption><b>The same shape at a much larger scale.</b> ⋆-Gen's Bridge V2 results, modified from <a href="https://arxiv.org/abs/2503.01238">Gao et al.</a>, 1,600+ trials across 14 axes.</figcaption>
-    </figure>
-
-    <p class="tcap">Table 3. Where generalisation gets measured.</p>
-      <div class="tscroll">
-        <table>
-        <thead><tr><th>Benchmark</th><th>Type</th><th>What it reports</th></tr></thead>
-        <tbody>
-          <tr><td><a href="https://arxiv.org/abs/2306.03310">LIBERO</a></td><td>Sim</td><td>Saturated above 95%, no longer separates models</td></tr>
-          <tr><td><a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO</a></td><td>Sim</td><td>Above 90% → 0% under object-position change</td></tr>
-          <tr><td><a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a></td><td>Sim</td><td>π₀ 94.2% → 15.8% under viewpoint change</td></tr>
-          <tr><td><a href="https://arxiv.org/abs/2402.08191">Colosseum</a></td><td>Sim</td><td>14 perturbation axes, sim and real do not always agree</td></tr>
-          <tr><td><a href="https://arxiv.org/abs/2503.01238">⋆-Gen</a></td><td>Real</td><td>22-axis taxonomy, 14 tested on hardware, 1,600+ trials</td></tr>
-          <tr><td><a href="https://arxiv.org/abs/2510.17950">RoboChallenge</a></td><td>Real</td><td>Fine-tuned π₀.₅ at 43.7% across 30 tasks</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <figure class="wide">
+<figure class="wide">
       <img src="ur5/docs/figures/eval_rq2_all_images_5wide.png" alt="Grid of twelve photographs showing the out-of-distribution test scenes." loading="lazy">
       <figcaption><b>1 factor changes per scene.</b> 12 of the 17 conditions.</figcaption>
     </figure>
@@ -697,9 +708,9 @@ footer cite{font-style:italic}
   </div>
 </section>
 
-<section id="s8">
+<section id="s9">
   <div class="wrap">
-    <h2><span class="n">8.</span> Open weights, closed everything else</h2>
+    <h2><span class="n">9.</span> Open weights, closed everything else</h2>
     <p><a href="https://arxiv.org/abs/2504.16054">π₀.₅</a> ships as open weights. Its training data does not ship at all. The total size, the exact composition, and the collection method are unpublished. <a href="https://arxiv.org/abs/2410.24164">π₀</a> was trained on more than 10,000 hours of robot data across several robot types, and π₀.₅ extends that with in-home mobile manipulation data, of which roughly 400 hours is disclosed, plus multimodal web data. Beyond that rough hour count, the composition is not described.</p>
     <p>This is not an abstract complaint, because it removes a specific method from the table. The standard way to adapt a foundation policy without destroying its general ability is co-training: mix a slice of the original pre-training data into the fine-tuning set so the model keeps its prior. The ⋆-Gen authors ran their own case studies that way. I could not, because the data does not exist outside the lab that collected it. Every result here comes from fine-tuning on 10 new demonstrations and nothing else, and the memorisation in section 5 is exactly what co-training exists to prevent.</p>
     <p>So the honest description of the artefact is narrower than "open source". The weights are open. The inference code is open. The training recipe is partly open. The data is closed, the pre-training configuration is closed, and the channel where you would ask about any of it returns no reply from the project about 3 times in 5.</p>
@@ -710,9 +721,9 @@ footer cite{font-style:italic}
   </div>
 </section>
 
-<section id="s9">
+<section id="s10">
   <div class="wrap">
-    <h2><span class="n">9.</span> Fine-tuning bought the trained condition, not the task</h2>
+    <h2><span class="n">10.</span> Fine-tuning bought the trained condition, not the task</h2>
     <p>Put the two numbers from the top of this page next to the literature. My policy averaged 0.40 across 17 out-of-distribution conditions. The Penn PAL Lab's π₀-FAST, with no fine-tuning at all, averaged 0.42 on hardware its checkpoint already matched.</p>
     <p>A fine-tuned policy, perturbed, lands at roughly the same task progress as an untuned policy on matched hardware. That is the honest summary of what 8 months bought. The trained condition improved a great deal, and the general ability to do the task did not transfer.</p>
     <p>The other comparison is more encouraging. In-distribution, 10 episodes, about 13 minutes of demonstrations, reached close to the level that π₀ needed roughly 5 hours of fine-tuning data to reach in its <a href="https://arxiv.org/abs/2410.24164">own scaling study</a>. If your deployment condition is genuinely fixed, that is a very cheap way to get a working policy. If it is not fixed, nothing here supports extrapolating.</p>

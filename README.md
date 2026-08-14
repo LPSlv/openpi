@@ -2,6 +2,8 @@
 
 *π₀.₅ fine-tuning, deployment, and generalisation testing on a Universal Robots UR5e (openpi fork).*
 
+📄 **[87 runs to a working policy](https://lpslv.github.io/openpi/)** — the write-up: what it takes to adapt a VLA to hardware with no matching checkpoint, and what 2,246 issues across three VLA repositories say about who answers when it breaks.
+
 Vision-language-action (VLA) models promise a single learned policy that adapts to new embodiments from a handful of demonstrations. This work tests that claim: Physical Intelligence's **π₀.₅** is fine-tuned on a Universal Robots UR5e for a tabletop pick-and-place task, and the resulting policy is then tested across 17 out-of-distribution conditions using the ⋆-Gen taxonomy to map where it generalises and where it stops working. Adapting the model to the new arm was non-trivial: zero-shot failed and a working policy emerged only after 87 training trials, and generalisation off the training distribution was narrow.
 
 | **87 runs** | **80 %** | **40 %** |

@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!--
+  archetype : hybrid, research-to-product translation (primary)
+                     + AI/agent system writeup (absorbed)
+  audience  : peer-engineer-deep / infra-or-research-peer
+  depth     : opening R1 · body R3–R5 · closing R1 · traversal spiral
+  voice     : first-person singular, single-author academic blog
+              (deliberate deviation from third-person team register)
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>87 runs to a working policy: fine-tuning π₀.₅ onto a UR5e</title>
+<link rel="canonical" href="https://lpslv.github.io/openpi/">
+<meta name="description" content="Fine-tuning the π₀.₅ vision-language-action model onto a UR5e with no matching checkpoint: 87 training runs, 17 out-of-distribution conditions, 2,246 issues.">
+<meta name="author" content="Lenards Skrodelis">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+
+<meta property="og:type" content="article">
+<meta property="og:title" content="87 runs to a working policy">
+<meta property="og:description" content="Papers report the runs that worked. Issue trackers report the rest. What it takes to fine-tune a vision-language-action model onto a robot arm with no checkpoint waiting for it.">
+<meta property="og:url" content="https://lpslv.github.io/openpi/">
+<meta property="og:image" content="https://lpslv.github.io/openpi/ur5/docs/figures/blog_og_card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="87 runs to a working policy. 87 training runs, 2,246 issues analysed, 17 out-of-distribution conditions.">
+<meta property="og:locale" content="en_GB">
+<meta property="article:published_time" content="2026-08-13">
+<meta property="article:author" content="Lenards Skrodelis">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="87 runs to a working policy">
+<meta name="twitter:description" content="Papers report the runs that worked. Issue trackers report the rest. Fine-tuning π₀.₅ onto a UR5e, and what 2,246 VLA issues say about who answers when it breaks.">
+<meta name="twitter:image" content="https://lpslv.github.io/openpi/ur5/docs/figures/blog_og_card.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": ["BlogPosting", "ScholarlyArticle"],
+  "headline": "87 runs to a working policy",
+  "alternativeHeadline": "Fine-tuning π₀.₅ onto a UR5e with no matching checkpoint",
+  "description": "An account of adapting the π₀.₅ vision-language-action model to a Universal Robots UR5e: 87 training runs to a working policy, 17 out-of-distribution conditions from the ⋆-Gen taxonomy, and an analysis of 2,246 issues across three open VLA repositories.",
+  "image": "https://lpslv.github.io/openpi/ur5/docs/figures/blog_og_card.png",
+  "datePublished": "2026-08-13",
+  "dateModified": "2026-08-13",
+  "inLanguage": "en",
+  "wordCount": 6025,
+  "author": {
+    "@type": "Person",
+    "name": "Lenards Skrodelis",
+    "affiliation": {
+      "@type": "CollegeOrUniversity",
+      "name": "University of Tartu",
+      "department": "Institute of Technology"
+    }
+  },
+  "mainEntityOfPage": { "@type": "WebPage", "@id": "https://lpslv.github.io/openpi/" },
+  "isBasedOn": {
+    "@type": "Thesis",
+    "name": "Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment",
+    "author": { "@type": "Person", "name": "Lenards Patriks Skrodelis" },
+    "datePublished": "2026",
+    "inSupportOf": "Master's thesis",
+    "publisher": { "@type": "CollegeOrUniversity", "name": "University of Tartu" }
+  },
+  "keywords": "vision-language-action models, VLA, pi0.5, openpi, UR5e, robot manipulation, imitation learning, fine-tuning, generalisation, star-Gen, foundation models for robotics",
+  "about": [
+    { "@type": "Thing", "name": "Vision-language-action model" },
+    { "@type": "Thing", "name": "Robot manipulation" },
+    { "@type": "Thing", "name": "Fine-tuning" },
+    { "@type": "Thing", "name": "Out-of-distribution generalisation" }
+  ],
+  "codeRepository": "https://github.com/LPSlv/openpi"
+}
+</script>
+<style>
+:root{
+  --paper:#fff;
+  --ink:#1a1a1a;
+  --muted:#6b6b6b;
+  --rule:#e4e4e4;
+  --faint:#f7f7f7;
+  --accent:#2f6b5c;
+  --quiet:#8a8a8a;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono","Cascadia Mono","JetBrains Mono","Roboto Mono",Menlo,Consolas,monospace;
+  --col:43rem;          /* ~72 characters at the base size */
+  --lh:1.618;           /* φ */
+  --rhythm:1.35rem;     /* vertical unit, all block spacing is a multiple */
+  --wide:60rem;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);
+  font-size:1.2rem;line-height:var(--lh);
+  font-kerning:normal;font-variant-ligatures:common-ligatures;
+  text-rendering:optimizeLegibility;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--col);margin:0 auto;padding:0 1.4rem}
+
+p,ul,ol,.callout{
+  text-align:justify;
+  hyphens:auto;-webkit-hyphens:auto;
+}
+.subtitle,.byline,.rubric-note,.recipe,figcaption,footer li,.meter-head{text-align:left;hyphens:manual}
+
+a{color:inherit;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:.18em;text-decoration-color:#bdbdbd}
+a:hover{text-decoration-color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+code{font-family:var(--mono);font-size:.86em;background:var(--faint);padding:.1em .35em;border-radius:3px}
+
+.site{border-bottom:1px solid var(--rule)}
+.site .wrap{display:flex;align-items:baseline;gap:.75rem;padding-top:1.15rem;padding-bottom:1.15rem}
+.site-kind{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
+  border:1px solid var(--rule);border-radius:2px;padding:.1rem .4rem}
+.site-topic{font-size:.88rem;color:var(--quiet);margin-left:auto}
+@media (max-width:34rem){.site-topic{display:none}}
+
+/* ── masthead ─────────────────────────────────────────── */
+.masthead{padding:4.2rem 0 2.6rem}
+.subtitle{font-size:1.35rem;line-height:1.4;font-weight:400;color:#454545;
+  margin:0 0 var(--rhythm);text-align:left;hyphens:manual;text-wrap:pretty}
+.abstract{font-size:1.06rem;line-height:1.66;color:#3a3a3a;margin:0 0 calc(var(--rhythm)*1.6)}
+h1{font-size:clamp(2.05rem,1.5rem + 2.2vw,2.93rem);line-height:1.15;font-weight:650;
+  letter-spacing:-.02em;margin:0 0 var(--rhythm);text-wrap:balance;font-feature-settings:'kern' 1}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem .9rem;
+  font-size:.95rem;color:var(--muted);margin:0 0 calc(var(--rhythm)*.8);
+  padding-top:calc(var(--rhythm)*.6);border-top:1px solid var(--rule)}
+.meta > * + *{border-left:1px solid #d9d9d9;padding-left:.9rem}
+.meta .author{color:var(--ink);font-weight:650}
+.meta a{color:var(--muted)}
+.basedon{font-size:.93rem;line-height:1.6;color:var(--muted);margin:0;text-align:left;
+  padding-left:1rem;border-left:2px solid var(--rule)}
+.basedon cite{font-style:italic}
+
+/* ── citation box ─────────────────────────────────────── */
+.cite{border:1px solid var(--rule);border-radius:4px;margin:1rem 0 0;background:var(--faint);overflow:hidden}
+.cite-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;
+  padding:.6rem .9rem;border-bottom:1px solid var(--rule);background:var(--paper)}
+.cite-head span{font-size:.86rem;font-weight:650;color:var(--ink)}
+.cite button{font:inherit;font-size:.82rem;font-weight:600;color:var(--accent);
+  background:none;border:1px solid var(--rule);border-radius:3px;
+  padding:.22rem .6rem;cursor:pointer}
+.cite button:hover{border-color:var(--accent)}
+.cite button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cite pre{margin:0;padding:.9rem;overflow-x:auto;font-family:var(--mono);
+  font-size:.82rem;line-height:1.6;color:var(--ink);white-space:pre;-webkit-overflow-scrolling:touch}
+
+/* ── stage meter ──────────────────────────────────────── */
+.rubric{margin:calc(var(--rhythm)*2.6) 0 0;padding:calc(var(--rhythm)*1.7) 0 0;
+  border-top:1px solid var(--ink)}
+.grouplabel{font-size:.75rem;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--quiet);font-weight:650;margin:0 0 calc(var(--rhythm)*.9);text-align:left}
+figure.hero{margin:calc(var(--rhythm)*2) 0 0}
+figure.hero img{border:1px solid var(--rule)}
+.meter{margin:0 0 1.4rem}
+.meter-head{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
+  font-size:.97rem;margin:0 0 .45rem}
+.meter-label{color:var(--muted)}
+.meter-value{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums}
+.meter-track{display:flex;gap:3px}
+.seg{position:relative;flex:1;height:.46rem;background:#eeeeee;overflow:hidden}
+.seg i{position:absolute;inset:0;background:#9a9a9a;transform:scaleX(var(--f,0));transform-origin:left center}
+.meter.hero .seg i{background:var(--accent)}
+.meter-stages{display:flex;gap:3px;margin:.4rem 0 0;font-size:.8rem;color:var(--muted)}
+.meter-stages span{flex:1}
+.rubric-note{font-size:.96rem;line-height:1.6;color:var(--muted);margin:1.5rem 0 0}
+@media (prefers-reduced-motion:no-preference){
+  .seg i{transition:transform .85s cubic-bezier(.2,.6,.3,1);transition-delay:calc(var(--i,0)*80ms)}
+  .meter:not(.lit) .seg i{transform:scaleX(0)}
+}
+
+/* ── sections ─────────────────────────────────────────── */
+section{padding:4rem 0 0;border-top:1px solid var(--rule);margin-top:4rem}
+h2{font-size:clamp(1.5rem,1.25rem + .9vw,1.875rem);line-height:1.28;font-weight:600;
+  letter-spacing:-.014em;margin:0 0 var(--rhythm);text-wrap:balance}
+h2 .n{color:var(--quiet);font-weight:500;font-variant-numeric:tabular-nums}
+h3{font-size:1.15rem;font-weight:650;letter-spacing:-.004em;
+  margin:calc(var(--rhythm)*2) 0 calc(var(--rhythm)*.55)}
+p{margin:0 0 var(--rhythm);text-wrap:pretty}
+.lede{font-size:1.16rem;line-height:1.62;color:#2a2a2a}
+
+ul,ol{margin:0 0 var(--rhythm);padding-left:1.4rem}
+li{margin:0 0 calc(var(--rhythm)*.45)}
+li::marker{color:var(--quiet)}
+
+.callout{border-left:2px solid var(--rule);padding:.2rem 0 .2rem 1.4rem;
+  margin:calc(var(--rhythm)*1.6) 0;font-size:1.06rem;line-height:1.6;color:#3f3f3f}
+.callout b{color:var(--ink);font-weight:650}
+
+/* ── figures ──────────────────────────────────────────── */
+figure{margin:calc(var(--rhythm)*2.2) 0;width:100%}
+figure img{display:block;width:100%;height:auto;border:1px solid var(--rule);border-radius:2px}
+figcaption{font-size:.96rem;line-height:1.62;color:var(--muted);margin:.9rem 0 0;
+  font-style:italic}
+figcaption b{color:var(--ink);font-weight:650;font-style:normal}
+figure video{display:block;width:100%;height:auto;border:1px solid var(--rule);
+  border-radius:2px;background:#000}
+.figgrid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+.figgrid img{width:100%;height:auto;border:1px solid var(--rule);border-radius:2px}
+
+/* ── tables ───────────────────────────────────────────── */
+.tscroll{overflow-x:auto;margin:2.4rem 0;width:100%}
+table{border-collapse:collapse;width:100%;min-width:28rem;font-size:.94rem}
+.tcap{font-size:.92rem;color:var(--muted);font-style:italic;margin:2.4rem 0 .8rem;text-align:left}
+.tcap + .tscroll{margin-top:0}
+.tscroll{
+  background:
+    linear-gradient(to right, var(--paper) 30%, rgba(255,255,255,0)) left center,
+    linear-gradient(to left, var(--paper) 30%, rgba(255,255,255,0)) right center,
+    radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.10), transparent) left center,
+    radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.10), transparent) right center;
+  background-repeat:no-repeat;
+  background-size:40px 100%,40px 100%,13px 100%,13px 100%;
+  background-attachment:local,local,scroll,scroll;
+  -webkit-overflow-scrolling:touch;
+}
+th,td{text-align:left;padding:.55rem .85rem .55rem 0;border-bottom:1px solid var(--rule)}
+.tight{font-size:.89rem}
+.tight th,.tight td{white-space:nowrap}
+.tight th,.tight td{padding-right:.7rem}
+th{font-size:.88rem;color:var(--muted);font-weight:650;border-bottom:1px solid var(--ink)}
+td:last-child,th:last-child{padding-right:0}
+tr.ours td{background:var(--faint);font-weight:650}
+.num{font-family:var(--mono);font-size:.93em;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.recipe{border:1px solid var(--rule);background:var(--faint);padding:1.3rem 1.5rem;margin:2.2rem 0;font-size:1rem}
+.recipe dl{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1.5rem;margin:0}
+.recipe dt{color:var(--muted)}
+.recipe dd{margin:0;font-family:var(--mono);font-size:.9em}
+
+.outcomes{list-style:none;padding:0;margin:2rem 0}
+.outcomes li{padding:1.05rem 0;border-top:1px solid var(--rule);margin:0}
+.outcomes li:last-child{border-bottom:1px solid var(--rule)}
+.outcomes h4{font-size:.95rem;margin:0 0 .5rem;font-weight:650;color:var(--ink);
+  letter-spacing:.01em}
+.outcomes p{margin:0}
+
+footer{padding:3.5rem 0 6rem;border-top:1px solid var(--rule);margin-top:4rem;
+  font-size:.99rem;color:var(--muted)}
+footer h2{font-size:1.02rem;color:var(--ink);margin:2rem 0 .8rem;font-weight:700}
+footer h2:first-child{margin-top:0}
+footer ul{list-style:none;padding:0;margin:0}
+footer li{margin:0 0 .5rem}
+.reflist li{margin:0 0 .65rem;padding-left:1rem;text-indent:-1rem}
+footer cite{font-style:italic}
+
+/* ── contents ─────────────────────────────────────────── */
+.toc{margin:calc(var(--rhythm)*2.6) 0 0;padding:calc(var(--rhythm)*1.7) 0 0;border-top:1px solid var(--ink)}
+.toc h2{font-size:.75rem;letter-spacing:.11em;text-transform:uppercase;color:var(--quiet);
+  font-weight:650;margin:0 0 calc(var(--rhythm)*.9)}
+.toc ol{list-style:none;padding:0;margin:0;counter-reset:toc}
+.toc li{margin:0;counter-increment:toc;display:flex;gap:.7rem;align-items:baseline;
+  padding:.28rem 0;text-align:left}
+.toc li::before{content:counter(toc) ".";color:var(--quiet);font-variant-numeric:tabular-nums;
+  min-width:1.4rem;font-weight:500}
+.toc a{text-decoration:none;color:var(--ink)}
+.toc a:hover{text-decoration:underline;text-decoration-color:var(--accent)}
+
+@media (max-width:34rem){
+  .masthead{padding:3.2rem 0 2rem}
+  body{font-size:1.04rem}
+  p,ul,ol,.callout{text-align:left}
+  figure.wide{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  figure.wide img{min-width:620px;max-width:none;width:auto}
+  .tight{font-size:.85rem}
+  .figgrid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <span class="site-kind">Blog</span>
+    <span class="site-topic">robot learning · vision-language-action models</span>
+  </div>
+</header>
+
+<article>
+
+<header class="masthead">
+  <div class="wrap">
+    <h1>87 runs to a working policy</h1>
+    <p class="subtitle">What went wrong, and what went right, putting a vision-language-action model on a robot arm it had never seen, in a room it had never seen.</p>
+    <p class="abstract">This began as a master's thesis, and I started it with no hands-on experience of vision-language-action models. What follows is an honest recap of 8 months: what actually happened, what worked, what did not, and how much of it was never going to turn up in a paper. Research articles report the configuration that worked. They rarely report the runs that did not, the default values that quietly sabotage a small fine-tune, or the settings that sit outside training altogether and still decide whether anything moves. Those are the parts that determine whether a policy runs on your hardware, in your room, so those are the parts this article is about.</p>
+    <div class="meta">
+      <span class="author">Lenards Skrodelis</span>
+      <time datetime="2026-08-13">13 August 2026</time>
+      <span>29 min read</span>
+      <a href="https://github.com/LPSlv/openpi">Code</a>
+    </div>
+    <p class="basedon">Based on my master's thesis, <cite>Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment</cite>, Institute of Technology, University of Tartu, 2026. Supervised by Karl Kruusamäe and Agnes Luhtaru.</p>
+
+    <!-- ═══ MEDIA: lead image ════════════════════════════════════════════
+         Drop the file at media/hero.jpg, then delete this line and the
+         marker line below. Landscape, ideally the rig mid-task.
+    <figure class="hero">
+      <img src="media/hero.jpg" alt="The UR5e reaching for the blue block, with the drop box at the right of the workspace." loading="eager">
+      <figcaption>The rig mid-trial: UR5e, Robotiq Hand-E, and the blue block it was fine-tuned to pick up.</figcaption>
+    </figure>
+    ═════════════════════════════════════════════════════════════════════ -->
+
+    <div class="rubric">
+      <p class="grouplabel">Headline results</p>
+      <div class="meter hero">
+        <div class="meter-head"><span class="meter-label">In-distribution</span><span class="meter-value">0.80</span></div>
+        <div class="meter-track">
+          <span class="seg" style="--i:0"><i style="--f:1"></i></span>
+          <span class="seg" style="--i:1"><i style="--f:1"></i></span>
+          <span class="seg" style="--i:2"><i style="--f:.8"></i></span>
+          <span class="seg" style="--i:3"><i style="--f:.4"></i></span>
+        </div>
+        <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
+      </div>
+      <div class="meter">
+        <div class="meter-head"><span class="meter-label">Mean of 17 out-of-distribution conditions</span><span class="meter-value">0.40</span></div>
+        <div class="meter-track">
+          <span class="seg" style="--i:0"><i style="--f:1"></i></span>
+          <span class="seg" style="--i:1"><i style="--f:.61"></i></span>
+          <span class="seg" style="--i:2"><i style="--f:0"></i></span>
+          <span class="seg" style="--i:3"><i style="--f:0"></i></span>
+        </div>
+        <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
+      </div>
+      <p class="rubric-note">Every trial scores four sequential stages, 0.25 each. Task progress is not a success rate. It is how far along the chain the arm gets before it stops. The first bar shows the real per-stage rates, the second the mean across 17 conditions.</p>
+    </div>
+    <nav class="toc" aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#s1">Nobody can tell you which end of the range you land on</a></li>
+        <li><a href="#s2">When you get stuck, does anyone help?</a></li>
+        <li><a href="#s3">Before any of that: getting the arm to talk to the model</a></li>
+        <li><a href="#s4">What actually moved the needle across 87 runs</a></li>
+        <li><a href="#s5">The loss curve lied for the whole run</a></li>
+        <li><a href="#s6">The setting with no gradient attached to it</a></li>
+        <li><a href="#s7">How narrow the win actually was</a></li>
+        <li><a href="#s8">Open weights, closed everything else</a></li>
+        <li><a href="#s9">Fine-tuning bought the trained condition, not the task</a></li>
+      </ol>
+    </nav>
+  </div>
+</header>
+
+<section id="s1">
+  <div class="wrap">
+    <h2><span class="n">1.</span> Nobody can tell you which end of the range you land on</h2>
+    <p class="lede">A vision-language-action model is supposed to arrive already knowing how to be a robot. You add a handful of demonstrations, and you point it at your task. The published results do not say that. They say the outcome runs from 0% to 100%, and the papers rarely isolate what decides it.</p>
+    <p>Here is the deployment literature I could find, with my own result added at the bottom.</p>
+
+    <p class="tcap">Table 1. Vision-language-action deployment studies.</p>
+      <div class="tscroll">
+        <table class="tight">
+        <thead><tr><th>Study</th><th>Model</th><th>Robot</th><th>Approach (demos)</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL Lab</a></td><td>π₀-FAST</td><td>Franka</td><td>Zero-shot</td><td class="num">42% progress</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2506.23919">Chen et al.</a></td><td>OpenVLA</td><td>xArm</td><td>Zero-shot</td><td class="num">0%</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2510.17369">Su et al.</a></td><td>OpenVLA-OFT</td><td>Soft arm</td><td>Zero-shot</td><td class="num">0%</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2509.23121">Li et al.</a></td><td>π₀</td><td>Mobile ALOHA</td><td>Zero-shot</td><td class="num">0%</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2510.17369">Su et al.</a></td><td>OpenVLA-OFT</td><td>UR5</td><td>Fine-tuned, 50–100</td><td class="num">100% / 70%</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2502.19645">Kim et al.</a></td><td>OpenVLA-OFT+</td><td>ALOHA</td><td>Fine-tuned, 20–300</td><td class="num">51–100%</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2512.14031">Hu et al.</a></td><td>π₀ / π₀.₅</td><td>Simulation</td><td>Fine-tuned, 100–200</td><td class="num">60–100%</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2509.23121">Li et al.</a></td><td>π₀</td><td>Mobile ALOHA</td><td>Fine-tuned, 100</td><td class="num">~60%</td></tr>
+          <tr class="ours"><td>This work</td><td>π₀.₅</td><td>UR5e</td><td>Fine-tuned, 10</td><td class="num">80% ID / 40% OOD</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Read the zero-shot rows first. Four studies tried it, and three scored exactly zero. The fourth is the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL Lab at the University of Pennsylvania</a>, who reached 42% average task progress across more than 300 trials. Theirs is the one case where the checkpoint already matched the hardware: they ran π₀-FAST-DROID on a Franka, and the DROID checkpoint was fine-tuned on a Franka. They described the model as refreshingly easy to set up.</p>
+    <p>I had a UR5e, and there is no UR5e checkpoint. UR5e data sits somewhere in the π₀.₅ pre-training mix, but only as a small share. The base model has no notion of my workstation, my cameras, my table-mounted bin, or my task. Zero-shot produced nothing usable. The arm moved without any goal-directed structure, and the gripper twitched occasionally.</p>
+    <!-- ═══ MEDIA: workspace photo ═══════════════════════════════════════
+         Drop the file at media/setup-workspace.jpg, then delete this line
+         and the marker line below. Specs in media/README.md.
+    <figure class="wide">
+      <img src="media/setup-workspace.jpg" alt="The UR5e workspace: arm with Robotiq Hand-E gripper, tabletop, cardboard drop box, and the shoulder camera at the back-left corner." loading="lazy">
+      <figcaption><b>The rig.</b> A UR5e with a Robotiq Hand-E gripper, driven over RTDE at 10 Hz. 2 RealSense D435i cameras, one fixed at the back-left corner and one on the wrist, RGB only.</figcaption>
+    </figure>
+    ═════════════════════════════════════════════════════════════════════ -->
+
+    <p>So the ladder of adaptation effort runs roughly like this. Best case, a checkpoint already exists for your exact hardware. Next, your embodiment forms a large share of pre-training. Worst case, your hardware appears only as a small share. I was on the bottom rung. Getting from there to a policy that could pick up a block took 87 training runs and 33.8 GPU-hours, and most of those runs were exploratory. They were not 87 attempts at the same recipe. They were how I worked out which settings mattered at all, because nothing told me in advance which of them were load-bearing.</p>
+  </div>
+</section>
+
+<section id="s2">
+  <div class="wrap">
+    <h2><span class="n">2.</span> When you get stuck, does anyone help?</h2>
+    <p>Peer-reviewed deployment work mostly reports the runs that worked. The problems people actually hit appear in issue trackers, and they repeat with striking consistency.</p>
+    <ul>
+      <li><b>The pick never completes.</b> <a href="https://github.com/Physical-Intelligence/openpi/issues/906">One user</a> fine-tuned π₀.₅ on 138 episodes of pick-and-place. The loss came down. The controller followed the predicted pose to within a centimetre. The robot never completed the pick.</li>
+      <li><b>Normalisation statistics may destroy the policy silently.</b> One user's π₀.₅ fine-tune <a href="https://github.com/Physical-Intelligence/openpi/issues/711">scored 1% on LIBERO where the released checkpoint scores 96%</a>, and mismatched normalisation statistics are the leading suspect. The issue is unresolved.</li>
+      <li><b>Reimplementations do not match.</b> The <a href="https://huggingface.co/blog/danaaubakirova/pi0fast-issues">LeRobot PyTorch port of π₀-FAST</a> reached 30–60% on LIBERO against the paper's 80%. Nobody identified the cause.</li>
+      <li><b>Phrasing changes everything.</b> The <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL group</a> scored 0% on <em>"Close the toilet"</em> and 100% on <em>"Close the white lid of the toilet"</em>. Same model, same robot, same task.</li>
+    </ul>
+    <p class="lede">I hit the gripper failure, then the normalisation failure, then the phrasing sensitivity. So I pulled every issue from three of the most-used open VLA repositories, <a href="https://github.com/Physical-Intelligence/openpi">openpi</a>, <a href="https://github.com/openvla/openvla">OpenVLA</a> and <a href="https://github.com/huggingface/lerobot">lerobot</a>, and asked the question that actually matters when you are stuck at midnight: does anyone help, and is the help any good?</p>
+
+    <p>Working out who counts as "the project" is harder than it looks. GitHub only marks a commenter as a member when their organisation membership is public, and both <a href="https://github.com/Physical-Intelligence">Physical Intelligence</a> and the <a href="https://github.com/openvla">OpenVLA group</a> keep theirs private, so their staff appear as strangers. Counting commits instead is closer, but it misses people who answer constantly and rarely commit code. On openpi that includes Sergey Levine. Reading the threads and adding those people moves the no-reply-from-the-project figure from 67% to 61%, which is a large enough swing that any single number here deserves suspicion.</p>
+
+    <div class="tscroll">
+      <table class="tight">
+        <thead><tr><th>Who replied</th><th>openpi</th><th>OpenVLA</th><th>lerobot</th></tr></thead>
+        <tbody>
+          <tr><td>Someone from the project</td><td class="num">38.9%</td><td class="num">49.7%</td><td class="num">51.3%</td></tr>
+          <tr class="ours"><td>Only other users</td><td class="num">32.3%</td><td class="num">26.1%</td><td class="num">22.1%</td></tr>
+          <tr><td>Nobody at all</td><td class="num">28.8%</td><td class="num">24.2%</td><td class="num">26.6%</td></tr>
+          <tr><td>User-opened issues</td><td class="num">489</td><td class="num">306</td><td class="num">1,329</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="tcap">Table 2. Outcomes across 2,124 user-opened issues. Issues opened by the projects themselves are excluded.</p>
+
+    <p>Roughly a quarter of the people who report a problem get no response from anyone. That number is remarkably stable across all three projects, and it is the one I would take with me: if you post, the base rate of silence is about 1 in 4.</p>
+    <p>The more interesting column is the middle one. On openpi, <b>32% of issues are answered only by other users</b>, with nobody from the project involved. To judge whether those answers are any good, I read 128 of the answered threads closely, staff-answered and user-answered alike, and graded the best reply in each. 55% contained a concrete fix, config or explanation that would plausibly unblock the reporter, and another 29% offered a workaround or a useful pointer. Independent users, not staff, supplied that best answer in roughly 2 cases out of 5. The community is doing a substantial share of the support work.</p>
+
+    <figure class="wide">
+      <img src="ur5/docs/figures/blog_issue_answers.png" alt="Stacked bars showing, for each openpi issue topic, the share answered by the project, answered only by other users, and answered by nobody." loading="lazy">
+      <figcaption><b>Robot integration and deployment errors get the most attention. Conceptual questions and feature requests get the least.</b> Every openpi issue classified by reading its title and body, then split by who replied. Shown for the 394 issues that could be classified. A 95-issue "other / unclear" bucket is omitted.</figcaption>
+    </figure>
+
+    <p>The pattern is not what I expected. Questions with a concrete broken thing attached, a stack trace, a robot that will not move, mostly get answered. Questions about why the model behaves as it does, or asking for something to be released, mostly do not. That is a reasonable way for a busy team to triage, and it also means the further your problem sits from a reproducible error, the more you are on your own.</p>
+
+    <p>What the trackers cannot tell you is how many of those answers were right. My grading measures whether a reply looks like it would help, not whether it did. Two accounts in the openpi tracker post templated, plausible-sounding diagnoses across five to eight unrelated issues while promoting their own tools, and they inflate any count of "somebody replied".</p>
+
+    <figure class="wide">
+      <img src="ur5/docs/figures/blog_issue_response.png" alt="Three line charts showing the share of issues getting a project reply per quarter for openpi, OpenVLA and lerobot." loading="lazy">
+      <figcaption><b>Both research-lab projects were responsive at launch and then stopped.</b> openpi fell from the mid-70s to zero, OpenVLA from 85% to near zero within two quarters. lerobot, which is company-staffed, held near half for two years, though its most recent quarter is still open and sits lower. Quarters with fewer than 10 issues are omitted and all three panels share a time axis.</figcaption>
+    </figure>
+
+    <p>Some of that is ordinary academic life. A paper ships, students graduate, and the repository becomes an artefact rather than a product. No maintainer owes anybody free support. But the models are presented as usable, the code is presented as open, and when the tracker goes quiet the practical knowledge stops being recoverable.</p>
+
+    <p><a href="https://github.com/Physical-Intelligence/openpi/issues/912">Issue 912</a> is the case I keep returning to, because it is my own failure written by someone else. A user fine-tunes π₀.₅, the arm reaches the object and lines up correctly, and then it emits near-zero actions and pushes the object instead of grasping it. Two more people report the identical symptom on their own setups, one of them in simulation. Nobody from Physical Intelligence has ever replied. One commenter offers a plausible hypothesis about gripper normalisation, but never confirms they reproduced or fixed it, and the same account promotes an unrelated tool elsewhere in the tracker. The issue is still open. Across every grasping issue in the tracker, not one reaches a confirmed fix.</p>
+
+    <div class="callout">I spent weeks on gripper behaviour that 3 other people were reporting at the same time. <b>Reading the tracker would have cost me an afternoon. Posting to it would have bought me nothing.</b></div>
+  </div>
+</section>
+
+<section id="s3">
+  <div class="wrap">
+    <h2><span class="n">3.</span> Before any of that: getting the arm to talk to the model</h2>
+    <p class="lede">Every framework I evaluated documents the same 4 steps: install, convert your data, train, serve a policy. The step they all omit is the one between a served action vector and a joint that turns. On a platform the framework supports, that layer already exists. LeRobot's native robot list is small research arms, from SO100 and Koch through to Reachy2 and the Unitree G1, and a UR5e is not on it. So I wrote the layer myself: the recorder, the dataset converter, and the bridge that carries actions to the arm. This section is that layer, in the order I met its problems.</p>
+
+    <h3>The control interface is the first fork</h3>
+    <p>I drive the arm over RTDE, the real-time interface Universal Robots provide, and stream joint targets with <code>servoJ</code>. That was not the only option. ROS is the other obvious route, and which one you pick depends on your arm and on what your lab already runs. Decide on day one either way, because the recorder, the bridge and the safety clamp all get written against that choice, and the framework has no opinion about it at all.</p>
+
+    <h3>Put the cameras where the model's training data had them</h3>
+    <p>Check what the model consumes before you buy anything. π₀.₅ takes RGB only, so the depth stream on my RealSense cameras sits unused. The camera model matters little. The placement matters enormously, and my rule for it is simple: put the cameras where the model's own training data had them. I searched Physical Intelligence's blog posts and papers for photographs of their workspaces, noted where the base and wrist cameras sat and at what angle, and copied that geometry as closely as my table allowed. A fine-tune on 10 episodes will not teach the model a new viewpoint. It works best from one it already knows, and section 7 prices the mistake: a front-left shift of the shoulder camera cut task progress from 0.80 to 0.25, and a 2 cm shift of the wrist camera cut it to 0.25 as well.</p>
+    <p>After the sensor, reuse the framework's own image functions. openpi resizes, pads and reinserts the images at specific points in its pipeline, and any substitute you write there trains cleanly and fails on the robot. I also disabled auto-exposure for the dataset and fixed a separate value per camera. 100 for the base, 150 for the wrist, because exposure that drifts between recording and deployment is distribution shift you chose not to control. Address the cameras by serial number rather than by index, so the base and wrist streams can never swap.</p>
+
+    <!-- ═══ MEDIA: camera placement comparison ═══════════════════════════
+         Two images side by side: a still of openpi's published workspace, and
+         this workspace mimicking it. Files at media/placement-ref.jpg and
+         media/placement-ours.jpg. Check the licence before republishing
+         anyone else's photograph, linking to their page is the safe option.
+    <figure>
+      <div class="figgrid">
+        <img src="media/placement-ref.jpg" alt="Published reference workspace showing camera placement." loading="lazy">
+        <img src="media/placement-ours.jpg" alt="The UR5e workspace with cameras placed to match the reference." loading="lazy">
+      </div>
+      <figcaption><b>Left:</b> the reference setup. <b>Right:</b> mine, arranged to match it.</figcaption>
+    </figure>
+    ═════════════════════════════════════════════════════════════════════ -->
+
+    <h3>Mounts, cables, and the three lengths of bring-up</h3>
+    <p>The shoulder camera stands on an extrusion frame clamped to the table. The wrist camera sits on a 3D-printed bracket, and most of the other fixtures were printed too. Make the shoulder mount rigid, because every millimetre it drifts after recording is unplanned distribution shift. The wrist cable runs zip-tied along the arm and carries two duties that pull against each other: enough bandwidth for the stream, and enough slack for the arm's full reach without a tug at the connector. Plan that cable before the first episode. Mine caused no USB problems, but it is the component most likely to spoil an episode without an error message.</p>
+    <p>Bring-up then came in three stages of very unequal length. The arm moved almost immediately. Good motion took very long. A completed task took very long again, and that escalation, not any single obstacle, is the honest shape of the project. The gripper owns the ugly middle. It does not speak RTDE at all: the Robotiq gripper listens on its own TCP socket, port 63352, behind a URCap running on the pendant, which means a second protocol on a second connection for one robot. Remote gripper control on a UR5e is possible but awkward, and its failure mode is silence rather than an error.</p>
+    <p>Learn what normalisation the model expects before you record, because it differs per joint, and the gripper dimension follows its own convention again. Beyond that, almost any gripper serves, and one later result made the point sharply. The trained policy transferred to a different gripper, with a different stroke, different mechanics and a different appearance, and lost only 5 points of task progress (section 7). The gripper appears in every wrist-camera frame the model was ever trained on. It had every chance to bind its behaviour to how its own hand looks, and it did not.</p>
+
+    <!-- ═══ MEDIA: the two grippers ══════════════════════════════════════
+         Files at media/gripper-hande.jpg and media/gripper-2f85.jpg.
+    <figure>
+      <div class="figgrid">
+        <img src="media/gripper-hande.jpg" alt="The Robotiq Hand-E gripper used for training." loading="lazy">
+        <img src="media/gripper-2f85.jpg" alt="The Robotiq 2F-85 gripper used in the swap test." loading="lazy">
+      </div>
+      <figcaption><b>Trained on the left, tested on the right.</b> Different stroke, different mechanics, different appearance, 5 points of task progress lost.</figcaption>
+    </figure>
+    ═════════════════════════════════════════════════════════════════════ -->
+
+    <h3>Decide where inference runs before you need it to work</h3>
+    <p>Training and inference rarely share a machine, and the split is arithmetic rather than preference. openpi wants more than 70 GB of VRAM for a full fine-tune and more than 8 GB to serve the result. My 16 GB laptop GPU can serve but cannot train, so training went to an HPC cluster and the policy server ran on my own machine on the same network as the robot. Serving from the cluster failed against its network restrictions. A rented remote GPU works, at the price of extra latency in the loop. My local cycle took 241 ms against the 73 ms Physical Intelligence reports on an RTX 4090, and the actions-executed-per-call setting must absorb whatever latency you have, section 6 shows that one setting swings task progress from 0.25 to 0.80 on identical weights.</p>
+    <h3>Recording data without a leader arm</h3>
+    <p>Leader–follower teleoperation is the standard on research arms and the fastest route to natural motion. An industrial arm ships without a leader. The fallback worth knowing is LeRobot's phone teleoperation, which drives the arm from the phone's IMU, it needs sensitivity tuning, a stable connection and some smoothing, and the community built it for LeRobot's own small arms rather than for anything industrial. On my phone it did not work well enough. So I guided the arm by hand in freedrive, recorded the joint trajectory, reset the objects, and replayed the trajectory with the cameras running. It is slow, and the replay pass demands that every object return to its exact position. In exchange the motion is smooth and my body never appears in a training frame. OpenVLA's documentation independently recommends the replay half, replay demonstrations first to verify the robot can execute them, which is the same idea reached from the other direction.</p>
+    <p>2 data decisions belong before the first episode. First, absolute or delta actions: learn what the model expects, then record absolute and convert, because that conversion is trivial and the reverse is not. Second, frame synchronisation between the cameras and the joint stream: I did none, perhaps I should have, and I cannot tell you what it cost me. That one stays open. For the pipeline itself, borrow rather than build. The Open X-Embodiment ecosystem has working conversion code for robots like yours, and Rerun, the data tooling LeRobot itself uses to inspect runs, exists precisely because multimodal robot data gets messy, and a quality problem becomes invisible the moment it is inside a dataset.</p>
+
+    <h3>Read the issue tracker like documentation</h3>
+    <p>The data and policy config changed the model's behaviour more than any other file I touched, and the correct values are mostly not written anywhere. Use the delta action transform, that area of openpi has carried a series of bugs, and delta is the setting that works. When my gripper refused to close, I oversampled the gripper-transition frames, one of the 7 remedies section 4 accounts for. The rest is understanding the model plus trial and error, and the fastest way to compress it is blunt: point an AI agent at the framework's entire issue tracker and make it report. The tracker is not worth posting to, for the reason section 2 measures. It is very much worth reading, at machine speed.</p>
+    <p>If I rebuilt the stack today, I would make it modular and base it on LeRobot rather than write the recorder, converter and bridge as one custom stack against 1 robot. The custom route worked. It is also welded to this arm, and none of it will survive a change of hardware.</p>
+
+    <div class="callout"><b>Go one layer at a time.</b> At the start, when the arm sits there and does nothing, you cannot tell whether you command the robot wrongly, or the policy is broken, or the data is. Every layer fails identically from the outside. I kept two switches in the bridge for exactly this: <code>DRY_RUN=1</code> logs every command without moving the arm, and <code>FAKE_CAM=1</code> runs the loop without cameras, and I recommend verifying each layer alone before you stack the next. Anything else is guessing, and it is the annoying kind.</div>
+  </div>
+</section>
+
+<section id="s4">
+  <div class="wrap">
+    <h2><span class="n">4.</span> What actually moved the needle across 87 runs</h2>
+    <p>Most of the 87 runs did not explore interesting parts of the hyperparameter space. They found out which of <a href="https://github.com/Physical-Intelligence/openpi">openpi</a>'s reasonable defaults are calibrated for pre-training runs and quietly wrong for a 500-step fine-tune.</p>
+
+    <h3>warmup_steps = 50, not the inherited 1000</h3>
+    <p>This single change mattered more than anything else in the project. The default ramps the learning rate over the first 1000 steps, which is correct if you train for 30,000. On a 500-step budget the learning rate never reaches its configured peak, so the whole run executes at a fraction of the value you set. The loss still falls, so the dashboard looks healthy, and the policy underfits relative to the compute you just spent.</p>
+
+    <h3>Reload the pretrained normalisation statistics</h3>
+    <p>The convention is to compute normalisation statistics from your own dataset. That is right for medium and large datasets and wrong for small fine-tunes. 10 episodes narrow the envelope to whatever joint poses those 10 episodes happened to cover, and anything slightly outside clips into the saturated tails. Reloading the statistics that ship with <code>pi05_base</code> for <code>ur5e</code> gives a much wider envelope collected across many robots. This cost me weeks of debugging a policy that "diverged at the edges of the workspace".</p>
+
+    <h3>save_interval = 30, not 1000</h3>
+    <p>A mechanical point with outsized consequences. At the default you get exactly one checkpoint from a 500-step run, and no way to find the window where the policy works. Everything in the next section depends on having 17 checkpoints to test instead of 1.</p>
+
+    <h3>10 episodes beat 20, 30 and 50</h3>
+    <p>This is the result I would least have predicted. 10 episodes, about 13 minutes of demonstrations, produced a deployable policy. Datasets of 20, 30 and 50 episodes all failed at the same place. They all failed at the grasp, with the gripper output staying near zero regardless of where the object sat. Each larger dataset got its own hyperparameter search after it failed at the ten-episode settings, so this is not a tuning artefact.</p>
+    <p>The failure is specific, and it is visual. Tested against the training images the gripper closes correctly at the grasp position. Run against the live camera feed on the robot it stays open. The gripper overfits to the training images far earlier than the model learns accurate motion, so on the larger datasets no single checkpoint has both a working trajectory and a working gripper.</p>
+    <p>7 remedies went into trying to separate the 2: smoothing the gripper ramps so the open-to-closed transition spreads over several frames, oversampling the transition frames five-fold, weighting the gripper dimension in the loss, freezing the SigLIP visual backbone, lowering the learning rate, applying stronger crop and colour augmentation, and thresholding the gripper command at inference. None of them made the gripper close on the robot. Demonstration consistency mattered far more than demonstration count, which is the opposite of the lesson supervised vision teaches.</p>
+
+    <figure>
+      <img src="ur5/docs/figures/eval_dataset_size.png" alt="Bar chart of average task progress against fine-tuning dataset size, peaking at ten episodes." loading="lazy">
+      <figcaption><b>More demonstrations made the policy worse.</b> 10 episodes beat 20, 30 and 50. Only the 10-episode bar has a per-trial table behind it, shown with its min–max range across 5 trials. The remaining bars record observed outcomes without logged per-trial scores. Read the shape rather than the decimals.</figcaption>
+    </figure>
+
+    <h3>π₀-FAST was the wrong family for this task</h3>
+    <p>π₀-FAST was slow enough at inference to be unusable here, so it left the search early. Its runs also never produced a working gripper, because the <a href="https://arxiv.org/abs/2501.09747">FAST tokenizer</a> compresses action chunks with a discrete cosine transform that handles a step function badly.</p>
+
+    <h3>The configuration that worked</h3>
+    <div class="recipe">
+      <dl>
+        <dt>model</dt><dd>π₀.₅, full fine-tune from pi05_base</dd>
+        <dt>dataset</dt><dd>10 episodes, ~7,600 frames, 10 Hz</dd>
+        <dt>norm stats</dt><dd>reloaded from pi05_base/assets/ur5e</dd>
+        <dt>action</dt><dd>absolute targets, delta transform on</dd>
+        <dt>peak_lr</dt><dd>2.5e-5, warmup 50</dd>
+        <dt>batch</dt><dd>16</dd>
+        <dt>budget</dt><dd>500 steps, best checkpoint ~150</dd>
+        <dt>horizon</dt><dd>execute 6 of 15 predicted actions</dd>
+      </dl>
+    </div>
+    <p>2 things in that list look like infrastructure and are actually part of the policy. The reset pose the bridge moves to before each trial must match the first frame of the training episodes to within a few degrees, otherwise the policy extrapolates from an unfamiliar state before it does anything. The prompt string must lexically match a task label seen in training: <em>"Pick up the blue block and place it in the cardboard box"</em> works, and <em>"Grab the blue block and put it in the box"</em> measurably degrades behaviour.</p>
+  </div>
+</section>
+
+<section id="s5">
+  <div class="wrap">
+    <h2><span class="n">5.</span> The loss curve lied for the whole run</h2>
+    <p>With a checkpoint every 30 steps, the shape of training becomes visible on the robot. It is not the shape the loss suggests.</p>
+    <p>At step 120 the policy scored zero, stopping about 15 cm short of the block. At step 150 it worked: 0.80 in-distribution, and 0.70 out-of-distribution, which means it generalised to block positions it had never seen. At step 210 the in-distribution score was still 0.75 and the out-of-distribution score had collapsed to 0.25, with every trial failing at the pick. The training loss gave no warning: it sat low and flat across the whole window, and at step 210 it was no higher than at 150.</p>
+
+    <figure>
+      <img src="ur5/docs/figures/eval_id_vs_ood.png" alt="Grouped bar chart of in-distribution and out-of-distribution task progress across checkpoints with the training loss overlaid." loading="lazy">
+      <figcaption><b>The generalisation gap opens between steps 150 and 210 while the loss stays flat.</b> Nothing in the training curve marks the moment the policy stops generalising. Task progress in and out of distribution against training loss, 5 trials per checkpoint per condition.</figcaption>
+    </figure>
+
+    <p>The mechanism is legible in hindsight. Early in training the model learns the structure of the task: reach, grasp, transport, release. Later it memorises the specific joint trajectories that work for the positions in the training set. That is an improvement on those positions and a catastrophe everywhere else. Behaviour-cloning loss measures how closely predicted actions match the demonstrations, so it cannot detect this. Matching the demonstrations more exactly is precisely what overfitting looks like.</p>
+    <p>The same failure appears at its limit in a two-stage experiment. I trained 10,000 steps on a colleague's 800-episode dataset from a different task on a different workstation, then fine-tuned 300 steps on my 10 episodes. The result drove the arm to the same joint configuration on every trial, regardless of where the block sat or what the prompt said. Warm-starting from an earlier stage-one checkpoint changed nothing, so the small second-stage dataset caused it rather than an over-baked first stage.</p>
+    <p>The policy also got faster as it memorised. The mean time to complete the pick fell from 2:37 at step 150 to 0:26 at step 210, because the arm moved directly to positions it had already seen instead of searching for the object.</p>
+
+    <figure>
+      <img src="ur5/docs/figures/eval_timing.png" alt="Grouped bar chart of mean trial duration per stage across checkpoints, in and out of distribution." loading="lazy">
+      <figcaption><b>The policy got faster as it memorised, and then stopped gripping.</b> The step-210 out-of-distribution group is a reach-only bar: the arm still reaches the block quickly and never closes on it. Mean seconds per stage, averaged over the trials that reached each stage.</figcaption>
+    </figure>
+
+    <div class="callout"><b>You cannot validate a fine-tune offline.</b> The only instrument that detects this is out-of-distribution evaluation on the physical robot, which means deciding your conditions and keeping your intermediate checkpoints before you start training.</div>
+  </div>
+</section>
+
+<section id="s6">
+  <div class="wrap">
+    <h2><span class="n">6.</span> The setting with no gradient attached to it</h2>
+    <p>As trained here, π₀.₅ predicts a chunk of 15 actions per call. The bridge does not have to execute all of them. It can play the first <em>K</em> and then re-query with a fresh observation. That number is not learned, does not appear in any config the trainer sees, and has no effect at all on the loss. On the same checkpoint, the same dataset and the same weights, it moves task progress from 0.25 to 0.80.</p>
+
+    <figure>
+      <img src="ur5/docs/figures/eval_horizon.png" alt="Bar chart of task progress against the number of actions executed per inference call, forming an inverted U peaking at six." loading="lazy">
+      <figcaption><b>The optimum sits at roughly a third of the training horizon, not at the horizon itself.</b> Task progress against actions executed per inference call at the step-150 checkpoint, 5 trials per horizon. K = 15 executes the full predicted chunk.</figcaption>
+    </figure>
+
+    <p>Both ends fail at the grasp, for opposite reasons. Too short, and the policy re-queries before the gripper finishes closing, so it overwrites its own command mid-actuation. Too long, and it commits to a plan built from an observation that has gone stale, with no chance to correct. Training optimises the model to predict 15 coherent steps from one observation, but deployment hands it a new observation at every replan, and the value of that new information outweighs the cost of throwing most of the chunk away.</p>
+    <!-- ═══ MEDIA: video of the policy running ═══════════════════════════
+         Drop an MP4 at media/policy-run.mp4 and a still at
+         media/policy-run-poster.jpg, then delete this line and the marker below.
+    <figure class="wide">
+      <video controls preload="metadata" playsinline poster="media/policy-run-poster.jpg">
+        <source src="media/policy-run.mp4" type="video/mp4">
+        Your browser cannot play this video.
+      </video>
+      <figcaption><b>The step-150 checkpoint running in distribution.</b> Reach, grasp, transport, release, at K = 6.</figcaption>
+    </figure>
+    ═════════════════════════════════════════════════════════════════════ -->
+
+    <p>This matters beyond one number. The swing from 0.25 to 0.80 is larger than anything I achieved by changing the training configuration, and no offline metric would ever have revealed it. The inference configuration is part of the model, so log it with every evaluation result.</p>
+  </div>
+</section>
+
+<section id="s7">
+  <div class="wrap">
+    <h2><span class="n">7.</span> How narrow the win actually was</h2>
+    <p>A working policy is not the end of the question. The interesting part is where it stops working, so I tested it against 17 out-of-distribution conditions using the <a href="https://arxiv.org/abs/2503.01238">⋆-Gen taxonomy</a>. One factor changes at a time, and everything else stays close to training. Across all 85 trials, not 1 completed the release stage.</p>
+
+    <figure class="wide">
+      <img src="ur5/docs/figures/eval_rq2_overview.png" alt="Bar chart of task progress across 17 out-of-distribution conditions grouped by ⋆-Gen axis, against the in-distribution baseline." loading="lazy">
+      <figcaption><b>Not one condition reached the in-distribution baseline, and none completed release.</b> Mean task progress across 17 out-of-distribution conditions grouped by ⋆-Gen axis, 5 trials each, and the dashed line is the 80% baseline. Axis codes: V visual, VB visual-behavioural, VS visual-semantic, VSB visual-semantic-behavioural.</figcaption>
+    </figure>
+
+    <ul class="outcomes">
+      <li>
+        <h4>Held up. 65% to 75%</h4>
+        <p>A different gripper entirely, the Robotiq 2F-85 in place of the Hand-E, scored 75%. The block raised on a platform scored 75%, and added clutter scored 65%. A white block with an instruction naming it scored 75%. The gripper result surprised me most. The gripper is visible in every wrist-camera frame, so the policy could easily have bound its behaviour to how it looks, and it did not.</p>
+      </li>
+      <li>
+        <h4>Degraded. 25% to 65%</h4>
+        <p>Object shape changes cost between 15 and 35 points: a taller block scored 65%, a triangular prism 55%, a cylinder 45%. Camera moves were worse and asymmetric. A back-right shoulder shift still reached transport at 65%, a front-left shift dropped to 25%, and a 2 cm wrist-camera offset dropped to 25%. Changing the table surface to a white cloth scored 35%, where reach succeeded every time and the grasp closed on 1 of 5 trials.</p>
+      </li>
+      <li>
+        <h4>Broke. 0% to 10%</h4>
+        <p>Covering either camera scored 0%. A different robot arm scored 0%. The language-conflict scene scored 10%: asked to pick up the white block with the trained blue block also in frame, the policy went to the blue block on 4 of 5 trials.</p>
+      </li>
+    </ul>
+
+    <!-- ═══ MEDIA: gripper and wrist view ════════════════════════════════
+         Drop files at media/setup-gripper.jpg and media/setup-wrist-view.jpg,
+         then delete this line and the marker line below.
+    <figure>
+      <div class="figgrid">
+        <img src="media/setup-gripper.jpg" alt="Close-up of the Robotiq Hand-E gripper holding the blue block." loading="lazy">
+        <img src="media/setup-wrist-view.jpg" alt="The view from the wrist camera during a grasp." loading="lazy">
+      </div>
+      <figcaption><b>Left:</b> the Hand-E gripper. <b>Right:</b> what the wrist camera sees. The gripper appears in every wrist frame, so the policy could easily have bound its behaviour to how it looks. Swapping to the 2F-85 shows it did not.</figcaption>
+    </figure>
+    ═════════════════════════════════════════════════════════════════════ -->
+
+    <p>2 conclusions follow from the shape of that list. The policy treats the camera image as a fixed coordinate frame rather than inferring the geometry of the scene, so any change to the frame moves it off the mapping it learned. And the language instruction is too weak to override the visual prior, because whenever a trained object was in view the policy went to it regardless of the words.</p>
+    <p>Neither finding is unique to my setup. <a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a> reports π₀ dropping from 94.2% to 15.8% under viewpoint changes, and <a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO</a> reports a fall from above 90% to 0% when object starting positions change. Every model the <a href="https://arxiv.org/abs/2503.01238">⋆-Gen authors</a> and the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL group</a> tested showed the same weak semantic generalisation.</p>
+
+    <p class="tcap">Table 3. Where generalisation gets measured.</p>
+      <div class="tscroll">
+        <table>
+        <thead><tr><th>Benchmark</th><th>Type</th><th>What it reports</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://arxiv.org/abs/2306.03310">LIBERO</a></td><td>Sim</td><td>Saturated above 95%, no longer separates models</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO</a></td><td>Sim</td><td>Above 90% → 0% under object-position change</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a></td><td>Sim</td><td>π₀ 94.2% → 15.8% under viewpoint change</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2402.08191">Colosseum</a></td><td>Sim</td><td>14 perturbation axes, sim and real do not always agree</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2503.01238">⋆-Gen</a></td><td>Real</td><td>22-axis taxonomy, 14 tested on hardware, 1,600+ trials</td></tr>
+          <tr><td><a href="https://arxiv.org/abs/2510.17950">RoboChallenge</a></td><td>Real</td><td>Fine-tuned π₀.₅ at 43.7% across 30 tasks</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="wide">
+      <img src="ur5/docs/figures/eval_rq2_all_images_5wide.png" alt="Grid of twelve photographs showing the out-of-distribution test scenes." loading="lazy">
+      <figcaption><b>1 factor changes per scene, everything else is held at training conditions.</b> 12 of the 17 tested conditions, grouped by ⋆-Gen category.</figcaption>
+    </figure>
+    <p>Laid out together, the scenes make the failure boundary look arbitrary, and that is the point. Nothing separates the conditions that held up from the ones that collapsed except how far each sits from the 10 episodes the policy was trained on. A human looking at these photographs would call all 17 the same task.</p>
+  </div>
+</section>
+
+<section id="s8">
+  <div class="wrap">
+    <h2><span class="n">8.</span> Open weights, closed everything else</h2>
+    <p><a href="https://arxiv.org/abs/2504.16054">π₀.₅</a> ships as open weights. Its training data does not ship at all. The total size, the exact composition, and the collection method are unpublished. <a href="https://arxiv.org/abs/2410.24164">π₀</a> was trained on more than 10,000 hours of robot data across several robot types, and π₀.₅ extends that with in-home mobile manipulation data, of which roughly 400 hours is disclosed, plus multimodal web data. Beyond that rough hour count, the composition is not described.</p>
+    <p>This is not an abstract complaint. It removes a specific method from the table. The standard way to adapt a foundation policy without destroying its general ability is co-training: mix a slice of the original pre-training data into the fine-tuning set so the model keeps its prior while it learns your task. The <a href="https://arxiv.org/abs/2503.01238">⋆-Gen authors</a> ran their own case studies that way. I could not, because the data does not exist outside the lab that collected it. Every result in this article comes from fine-tuning on 10 new demonstrations and nothing else, and the memorisation I measured in section 5 is exactly the failure co-training exists to prevent.</p>
+    <p>So the honest description of the artefact is narrower than "open source". The weights are open. The inference code is open. The training recipe is partly open. The data is closed, the pre-training configuration is closed, and the channel where you would ask about any of it returns no reply from the project about 3 times in 5.</p>
+    <div class="callout">Open weights without open data give the appearance of openness while withholding what adaptation and independent validation actually need. <b>You can run the model. You cannot check it, and you cannot fully adapt it.</b></div>
+    <p>The counter-argument deserves stating. Collecting hundreds of hours of in-home robot demonstrations is expensive, the data carries real privacy exposure, and no licence obliges anyone to publish it. Releasing weights at all is more than most commercial labs do. None of that is in dispute.</p>
+    <p>What I would say instead is that the current arrangement quietly transfers a cost. Every team that adapts one of these models re-derives the same undocumented knowledge, and most of them never write it down. The 489 openpi issues are the visible part of that duplicated effort. About 3 in 5 get no reply from the project, and about 1 in 4 get no reply from anyone at all. My own 8 months were largely spent rediscovering things that other people had already found and could not get answered.</p>
+    <p>The checkpoints themselves have a short shelf life. π₀ gave way to π₀.₅ inside about a year, and the field moves faster than that now. The weights will be superseded. What lasts is the accumulated practical knowledge about how to put these models on real hardware, and that is precisely the part currently stored in unanswered issue threads and in the private notebooks of individual students.</p>
+  </div>
+</section>
+
+<section id="s9">
+  <div class="wrap">
+    <h2><span class="n">9.</span> Fine-tuning bought the trained condition, not the task</h2>
+    <p>Put the two numbers from the top of this page next to the literature. My policy averaged 0.40 across 17 out-of-distribution conditions. The Penn PAL Lab's π₀-FAST, with no fine-tuning at all, averaged 0.42 on hardware its checkpoint already matched.</p>
+    <p>A fine-tuned policy, perturbed, lands at roughly the same task progress as an untuned policy on matched hardware. That is the honest summary of what 8 months bought. The trained condition improved a great deal, and the general ability to do the task did not transfer.</p>
+    <p>The other comparison is more encouraging. In-distribution, 10 episodes, about 13 minutes of demonstrations, reached close to the level that π₀ needed roughly 5 hours of fine-tuning data to reach in its <a href="https://arxiv.org/abs/2410.24164">own scaling study</a>. If your deployment condition is genuinely fixed, that is a very cheap way to get a working policy. If it is not fixed, nothing here supports extrapolating.</p>
+
+    <h3>What I would do on day 1</h3>
+    <ol>
+      <li>Record <b>1</b> episode and train on it. It will not work, but if the arm does not move toward the object at all, something in your recording, conversion, serving or bridge is broken.</li>
+      <li>Set <code>warmup_steps=50</code> and <code>save_interval=30</code> before your first real run. Both defaults assume a training budget 60 times larger than yours.</li>
+      <li>Reload the pretrained normalisation statistics rather than computing fresh ones from a small dataset.</li>
+      <li>Record 10 consistent episodes rather than 40 varied ones.</li>
+      <li>Evaluate every checkpoint on the robot in at least one out-of-distribution condition, and sweep the inference horizon before you conclude anything about the model.</li>
+    </ol>
+
+    <h3>What this does not establish</h3>
+    <p>Every run used a single seed, so I have no variance estimate and any individual result could be luck. That is the largest unmeasured risk in the project. LoRA was tested and did not produce a working policy at these settings, which is a weaker claim than saying LoRA does not work: community reports suggest it can match full fine-tuning on small datasets, so the negative result may belong to my configuration rather than to the method. The recipe was validated on one task with a single object, a 30 cm × 30 cm patch and a fixed bin, and whether it survives a longer or more complex task is the obvious next experiment.</p>
+    <h3>Write down what you find</h3>
+    <p>Every checkpoint, every trial score and every dead end from those 87 runs is in the repository, because the thing that cost me 8 months was not compute and it was not the model. It was that the answers existed and were not written down anywhere I could reach them.</p>
+    <p>So if you put one of these policies on hardware that has no checkpoint waiting for it, and you find something these notes do not cover, publish it. Section 2 is the measurement that makes the case: about 1 in 4 questions asked in the open get no reply from anyone, and on the research-lab trackers the ones that survive a month rarely get one later. Papers report the runs that worked. Whether anything reports the rest is up to whoever writes next.</p>
+  </div>
+</section>
+
+</article>
+
+<footer>
+  <div class="wrap">
+    <h2>Cite the thesis</h2>
+    <ul>
+      <li>Skrodelis, L. P. (2026). <cite>Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment</cite>. Master's thesis (30 ECTS), Robotics and Computer Engineering Curriculum, Institute of Technology, University of Tartu. Supervisors: Karl Kruusamäe, PhD, and Agnes Luhtaru, MSc.</li>
+    </ul>
+
+    <div class="cite">
+      <div class="cite-head">
+        <span>BibTeX</span>
+        <button type="button" data-copy="bibtex">Copy</button>
+      </div>
+      <pre id="bibtex">@mastersthesis{skrodelis2026vla,
+  author  = {Skrodelis, Lenards Patriks},
+  title   = {Adaptation and Generalisation of a Vision-Language-Action
+             Model on a New Embodiment},
+  school  = {University of Tartu, Institute of Technology},
+  type    = {Master's thesis},
+  address = {Tartu, Estonia},
+  year    = {2026},
+  note    = {Supervisors: Karl Kruusam\"{a}e and Agnes Luhtaru}
+}</pre>
+    </div>
+
+    <div class="cite">
+      <div class="cite-head">
+        <span>Markdown</span>
+        <button type="button" data-copy="mdcite">Copy</button>
+      </div>
+      <pre id="mdcite">Skrodelis, L. P. (2026). *Adaptation and Generalisation of a
+Vision-Language-Action Model on a New Embodiment*. Master's thesis,
+Institute of Technology, University of Tartu.</pre>
+    </div>
+
+    <h2>References</h2>
+    <ul class="reflist">
+      <li>Black K. et al. <a href="https://arxiv.org/abs/2504.16054">π₀.₅: A Vision-Language-Action Model with Open-World Generalization</a>. arXiv:2504.16054, 2025.</li>
+      <li>Black K. et al. <a href="https://arxiv.org/abs/2410.24164">π₀: A Vision-Language-Action Flow Model for General Robot Control</a>. arXiv:2410.24164, 2024.</li>
+      <li>Wang J., Leonard M., Daniilidis K., Jayaraman D., Hu E. S. <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Evaluating π₀ in the Wild: Strengths, Problems, and the Future of Generalist Robot Policies</a>. Penn PAL Lab.</li>
+      <li>Gao J. et al. <a href="https://arxiv.org/abs/2503.01238">A Taxonomy for Evaluating Generalist Robot Manipulation Policies</a> (⋆-Gen). arXiv:2503.01238, 2025.</li>
+      <li>Pertsch K. et al. <a href="https://arxiv.org/abs/2501.09747">FAST: Efficient Action Tokenization for Vision-Language-Action Models</a>. arXiv:2501.09747, 2025.</li>
+      <li>Kim M. J. et al. <a href="https://arxiv.org/abs/2406.09246">OpenVLA: An Open-Source Vision-Language-Action Model</a>. arXiv:2406.09246, 2024.</li>
+      <li>Kim M. J., Finn C., Liang P. <a href="https://arxiv.org/abs/2502.19645">Fine-Tuning Vision-Language-Action Models: Optimizing Speed and Success</a>. arXiv:2502.19645, 2025.</li>
+      <li>Su H. et al. <a href="https://arxiv.org/abs/2510.17369">Bridging Embodiment Gaps: Deploying Vision-Language-Action Models</a>. arXiv:2510.17369, 2025.</li>
+      <li>Hu Z. et al. <a href="https://arxiv.org/abs/2512.14031">Sample-Efficient Robot Skill Learning for Construction Tasks</a>. arXiv:2512.14031, 2025.</li>
+      <li>Li S. et al. <a href="https://arxiv.org/abs/2509.23121">Transferring Vision-Language-Action Models</a>. arXiv:2509.23121, 2025.</li>
+      <li>Chen H. et al. <a href="https://arxiv.org/abs/2506.23919">Goal-VLA</a>. arXiv:2506.23919, 2025.</li>
+      <li>Liu B. et al. <a href="https://arxiv.org/abs/2306.03310">LIBERO: Benchmarking Knowledge Transfer for Lifelong Robot Learning</a>. arXiv:2306.03310, 2023.</li>
+      <li>Fei S. et al. <a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a>. arXiv:2510.13626, 2025.</li>
+      <li>Zhou X. et al. <a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO: Towards Robust and Fair Evaluation of Vision-Language-Action Models Beyond Memorization</a>. arXiv:2510.03827, 2025.</li>
+      <li>Pumacay W. et al. <a href="https://arxiv.org/abs/2402.08191">THE COLOSSEUM: A Benchmark for Evaluating Generalization for Robotic Manipulation</a>. arXiv:2402.08191, 2024.</li>
+      <li>Yakefu A. et al. <a href="https://arxiv.org/abs/2510.17950">RoboChallenge</a>. arXiv:2510.17950, 2025.</li>
+      <li>openpi issue reports: <a href="https://github.com/Physical-Intelligence/openpi/issues/906">#906</a>, <a href="https://github.com/Physical-Intelligence/openpi/issues/912">#912</a>, <a href="https://github.com/Physical-Intelligence/openpi/issues/711">#711</a>. <a href="https://huggingface.co/blog/danaaubakirova/pi0fast-issues">LeRobot π₀-FAST port notes</a>.</li>
+    </ul>
+
+
+    <p style="margin-top:2.5rem">π₀.₅ adaptation and generalisation on a UR5e · openpi fork · 2026</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var m = document.querySelectorAll('.meter');
+  if(!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches){
+    m.forEach(function(x){ x.classList.add('lit'); }); return;
+  }
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('lit'); io.unobserve(e.target); } });
+  }, {threshold:0.4});
+  m.forEach(function(x){ io.observe(x); });
+})();
+
+// copy-to-clipboard for the citation blocks
+(function(){
+  function legacyCopy(text){
+    var ta=document.createElement('textarea'), ok=false;
+    ta.value=text; ta.setAttribute('readonly','');
+    ta.style.position='fixed'; ta.style.top='-1000px';
+    document.body.appendChild(ta); ta.select();
+    ta.setSelectionRange(0, text.length);
+    try{ ok=document.execCommand('copy'); }catch(e){ ok=false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+  function copy(text){
+    if(navigator.clipboard && window.isSecureContext){
+      return navigator.clipboard.writeText(text).catch(function(){
+        if(legacyCopy(text)) return;
+        throw new Error('copy failed');
+      });
+    }
+    return legacyCopy(text) ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+  }
+  document.querySelectorAll('.cite button[data-copy]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var el=document.getElementById(btn.getAttribute('data-copy'));
+      if(!el) return;
+      copy(el.textContent).then(function(){
+        var old=btn.textContent;
+        btn.textContent='Copied';
+        setTimeout(function(){ btn.textContent=old; }, 1600);
+      }).catch(function(){
+        btn.textContent='Press Ctrl+C';
+        setTimeout(function(){ btn.textContent='Copy'; }, 2000);
+      });
+    });
+  });
+})();
+</script>
+
+<!-- Cloudflare Web Analytics -->
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "74936e920e694974b6139e600347f9a0"}'></script>
+<!-- End Cloudflare Web Analytics -->
+</body>
+</html>

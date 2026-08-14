@@ -221,6 +221,32 @@ figure svg{display:block;width:100%;height:auto;overflow:visible;color:var(--ink
 .seg-none{fill:#e6e6e6;stroke:#d2d2d2;stroke-width:.7}
 @media (max-width:34rem){.smallmult{grid-template-columns:1fr;gap:1.6rem}}
 
+
+/* ── portrait video ───────────────────────────────────── */
+figure.portrait{width:100%;display:flex;flex-direction:column;align-items:center}
+figure.portrait video{width:min(340px,80%);height:auto;border:1px solid var(--rule);
+  border-radius:3px;background:#000}
+figure.portrait figcaption{max-width:var(--col)}
+
+/* ── VLA build animation ──────────────────────────────── */
+.vla-build{margin-top:calc(var(--rhythm)*1.6)}
+.vla-stage{position:relative;width:100%;aspect-ratio:1500/760}
+.vla-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+  opacity:0;transition:opacity .55s ease;border:0}
+.vla-stage img.on{opacity:1}
+.vla-steps{display:flex;gap:.5rem;justify-content:center;margin:.6rem 0 0}
+.vla-steps button{font:inherit;font-size:.82rem;font-weight:600;color:var(--muted);
+  background:none;border:1px solid var(--rule);border-radius:999px;
+  padding:.22rem .85rem;cursor:pointer;transition:color .2s,border-color .2s}
+.vla-steps button.on{color:var(--accent);border-color:var(--accent)}
+.vla-steps button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.vla-stage img{transition:none}}
+
+/* ── charts read larger ───────────────────────────────── */
+figure svg .cl{font-size:11px}
+figure svg .cv{font-size:11.5px}
+figure svg .ct{font-size:11.5px}
+
 /* ── tables ───────────────────────────────────────────── */
 .tscroll{overflow-x:auto;margin:2.4rem 0;width:100%}
 table{border-collapse:collapse;width:100%;min-width:28rem;font-size:.94rem}
@@ -363,6 +389,20 @@ footer cite{font-style:italic}
   <div class="wrap">
     <h2><span class="n">1.</span> Nobody can tell you which end of the range you land on</h2>
     <p class="lede">A vision-language-action model is supposed to arrive already knowing how to be a robot. You add a handful of demonstrations, and you point it at your task. The published results do not say that. They say the outcome runs from 0% to 100%, and the papers rarely isolate what decides it.</p>
+    <figure class="wide vla-build" aria-label="A vision-language-action model builds on a language model and a vision-language model">
+      <div class="vla-stage">
+        <img src="media/vla-step1.jpg" alt="A brain with the prefrontal cortex highlighted, beside a box labelled LLM containing a transformer backbone." class="on" data-step="1">
+        <img src="media/vla-step2.jpg" alt="The same brain with the visual cortex also highlighted, beside a box labelled VLM containing a vision encoder and the LLM." data-step="2">
+        <img src="media/vla-step3.jpg" alt="The brain with the motor cortex highlighted too, beside a box labelled VLA containing the VLM and an action expert producing actions." data-step="3">
+      </div>
+      <div class="vla-steps" role="tablist">
+        <button type="button" class="on" data-go="1">Language</button>
+        <button type="button" data-go="2">Vision</button>
+        <button type="button" data-go="3">Action</button>
+      </div>
+      <figcaption><b>A VLA is a language model with two extra organs.</b> Start with a transformer that handles language. Add a vision encoder and it becomes a vision-language model. Add an action expert that turns the result into joint targets, and it can drive a robot. The brain regions are the loose analogy the architecture is named after.</figcaption>
+    </figure>
+
     <p>Here is the deployment literature I could find, with my own result added at the bottom.</p>
 
     <p class="tcap">Table 1. Vision-language-action deployment studies.</p>
@@ -384,6 +424,11 @@ footer cite{font-style:italic}
     </div>
 
     <p>Read the zero-shot rows first. Four studies tried it, and three scored exactly zero. The fourth is the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL Lab at the University of Pennsylvania</a>, who reached 42% average task progress across more than 300 trials. Theirs is the one case where the checkpoint already matched the hardware: they ran π₀-FAST-DROID on a Franka, and the DROID checkpoint was fine-tuned on a Franka. They described the model as refreshingly easy to set up.</p>
+    <figure>
+      <img src="media/penn-pal-setup.jpg" alt="The Penn PAL Lab DROID workspace: a Franka arm with a wrist camera and a shoulder-mounted camera over a cluttered tabletop." loading="lazy">
+      <figcaption><b>The one setup where zero-shot worked.</b> The Penn PAL Lab's Franka running π₀-FAST-DROID, the checkpoint fine-tuned on exactly this arm. Modified from <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Wang et al.</a></figcaption>
+    </figure>
+
     <p>I had a UR5e, and there is no UR5e checkpoint. UR5e data sits somewhere in the π₀.₅ pre-training mix, but only as a small share. The base model has no notion of my workstation, my cameras, my table-mounted bin, or my task. Zero-shot produced nothing usable. The arm moved without any goal-directed structure, and the gripper twitched occasionally.</p>
     <!-- ═══ MEDIA: workspace photo ═══════════════════════════════════════
          Drop the file at media/setup-workspace.jpg, then delete this line
@@ -461,13 +506,6 @@ footer cite{font-style:italic}
     <h3>Put the cameras where the model's training data had them</h3>
     <p>Check what the model consumes before you buy anything. π₀.₅ takes RGB only, so the depth stream on my RealSense cameras sits unused. The camera model matters little. The placement matters enormously, and my rule for it is simple: put the cameras where the model's own training data had them. I searched Physical Intelligence's blog posts and papers for photographs of their workspaces, noted where the base and wrist cameras sat and at what angle, and copied that geometry as closely as my table allowed. A fine-tune on 10 episodes will not teach the model a new viewpoint. It works best from one it already knows, and section 7 prices the mistake: a front-left shift of the shoulder camera cut task progress from 0.80 to 0.25, and a 2 cm shift of the wrist camera cut it to 0.25 as well.</p>
     <p>After the sensor, reuse the framework's own image functions. openpi resizes, pads and reinserts the images at specific points in its pipeline, and any substitute you write there trains cleanly and fails on the robot. I also disabled auto-exposure for the dataset and fixed a separate value per camera. 100 for the base, 150 for the wrist, because exposure that drifts between recording and deployment is distribution shift you chose not to control. Address the cameras by serial number rather than by index, so the base and wrist streams can never swap.</p>
-    <figure>
-      <div class="figgrid">
-        <img src="media/penn-pal-setup.jpg" alt="The Penn PAL Lab DROID workspace: a Franka arm with a shoulder-mounted camera and a wrist camera." loading="lazy">
-        <img src="media/setup-workspace.jpg" alt="The UR5e workspace arranged to match: shoulder camera behind and above the arm, wrist camera on the gripper." loading="lazy">
-      </div>
-      <figcaption><b>Left:</b> a published DROID workspace, modified from the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL Lab</a>. <b>Right:</b> mine, arranged to sit as close to that geometry as my table allowed. Copying the reference cost an afternoon. Section 7 shows what getting it wrong costs.</figcaption>
-    </figure>
 
     <h3>Mounts, cables, and the three lengths of bring-up</h3>
     <p>The shoulder camera stands on an extrusion frame clamped to the table. The wrist camera sits on a 3D-printed bracket, and most of the other fixtures were printed too. Make the shoulder mount rigid, because every millimetre it drifts after recording is unplanned distribution shift. The wrist cable runs zip-tied along the arm and carries two duties that pull against each other: enough bandwidth for the stream, and enough slack for the arm's full reach without a tug at the connector. Plan that cable before the first episode. Mine caused no USB problems, but it is the component most likely to spoil an episode without an error message.</p>
@@ -578,17 +616,13 @@ footer cite{font-style:italic}
     </figure>
 
     <p>Both ends fail at the grasp, for opposite reasons. Too short, and the policy re-queries before the gripper finishes closing, so it overwrites its own command mid-actuation. Too long, and it commits to a plan built from an observation that has gone stale, with no chance to correct. Training optimises the model to predict 15 coherent steps from one observation, but deployment hands it a new observation at every replan, and the value of that new information outweighs the cost of throwing most of the chunk away.</p>
-    <!-- ═══ MEDIA: video of the policy running ═══════════════════════════
-         Drop an MP4 at media/policy-run.mp4 and a still at
-         media/policy-run-poster.jpg, then delete this line and the marker below.
-    <figure class="wide">
-      <video controls preload="metadata" playsinline poster="media/policy-run-poster.jpg">
+    <figure class="portrait">
+      <video controls preload="none" playsinline muted loop poster="media/policy-run-poster.jpg" width="506" height="900">
         <source src="media/policy-run.mp4" type="video/mp4">
         Your browser cannot play this video.
       </video>
-      <figcaption><b>The step-150 checkpoint running in distribution.</b> Reach, grasp, transport, release, at K = 6.</figcaption>
+      <figcaption><b>The policy running out of distribution, at 2× speed.</b> The target is a blue screwdriver rather than the blue block it was trained on, one of the 17 conditions in section 7. It reaches, grasps and transports. Watch the gripper: the whole task turns on 6 predicted actions being played before the next observation arrives.</figcaption>
     </figure>
-    ═════════════════════════════════════════════════════════════════════ -->
 
     <p>This matters beyond one number. The swing from 0.25 to 0.80 is larger than anything I achieved by changing the training configuration, and no offline metric would ever have revealed it. The inference configuration is part of the model, so log it with every evaluation result.</p>
   </div>

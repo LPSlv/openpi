@@ -461,20 +461,13 @@ footer cite{font-style:italic}
     <h3>Put the cameras where the model's training data had them</h3>
     <p>Check what the model consumes before you buy anything. π₀.₅ takes RGB only, so the depth stream on my RealSense cameras sits unused. The camera model matters little. The placement matters enormously, and my rule for it is simple: put the cameras where the model's own training data had them. I searched Physical Intelligence's blog posts and papers for photographs of their workspaces, noted where the base and wrist cameras sat and at what angle, and copied that geometry as closely as my table allowed. A fine-tune on 10 episodes will not teach the model a new viewpoint. It works best from one it already knows, and section 7 prices the mistake: a front-left shift of the shoulder camera cut task progress from 0.80 to 0.25, and a 2 cm shift of the wrist camera cut it to 0.25 as well.</p>
     <p>After the sensor, reuse the framework's own image functions. openpi resizes, pads and reinserts the images at specific points in its pipeline, and any substitute you write there trains cleanly and fails on the robot. I also disabled auto-exposure for the dataset and fixed a separate value per camera. 100 for the base, 150 for the wrist, because exposure that drifts between recording and deployment is distribution shift you chose not to control. Address the cameras by serial number rather than by index, so the base and wrist streams can never swap.</p>
-
-    <!-- ═══ MEDIA: camera placement comparison ═══════════════════════════
-         Two images side by side: a still of openpi's published workspace, and
-         this workspace mimicking it. Files at media/placement-ref.jpg and
-         media/placement-ours.jpg. Check the licence before republishing
-         anyone else's photograph, linking to their page is the safe option.
     <figure>
       <div class="figgrid">
-        <img src="media/placement-ref.jpg" alt="Published reference workspace showing camera placement." loading="lazy">
-        <img src="media/placement-ours.jpg" alt="The UR5e workspace with cameras placed to match the reference." loading="lazy">
+        <img src="media/penn-pal-setup.jpg" alt="The Penn PAL Lab DROID workspace: a Franka arm with a shoulder-mounted camera and a wrist camera." loading="lazy">
+        <img src="media/setup-workspace.jpg" alt="The UR5e workspace arranged to match: shoulder camera behind and above the arm, wrist camera on the gripper." loading="lazy">
       </div>
-      <figcaption><b>Left:</b> the reference setup. <b>Right:</b> mine, arranged to match it.</figcaption>
+      <figcaption><b>Left:</b> a published DROID workspace, modified from the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL Lab</a>. <b>Right:</b> mine, arranged to sit as close to that geometry as my table allowed. Copying the reference cost an afternoon. Section 7 shows what getting it wrong costs.</figcaption>
     </figure>
-    ═════════════════════════════════════════════════════════════════════ -->
 
     <h3>Mounts, cables, and the three lengths of bring-up</h3>
     <p>The shoulder camera stands on an extrusion frame clamped to the table. The wrist camera sits on a 3D-printed bracket, and most of the other fixtures were printed too. Make the shoulder mount rigid, because every millimetre it drifts after recording is unplanned distribution shift. The wrist cable runs zip-tied along the arm and carries two duties that pull against each other: enough bandwidth for the stream, and enough slack for the arm's full reach without a tug at the connector. Plan that cable before the first episode. Mine caused no USB problems, but it is the component most likely to spoil an episode without an error message.</p>
@@ -646,6 +639,11 @@ footer cite{font-style:italic}
     <p>2 conclusions follow from the shape of that list. The policy treats the camera image as a fixed coordinate frame rather than inferring the geometry of the scene, so any change to the frame moves it off the mapping it learned. And the language instruction is too weak to override the visual prior, because whenever a trained object was in view the policy went to it regardless of the words.</p>
     <p>Neither finding is unique to my setup. <a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a> reports π₀ dropping from 94.2% to 15.8% under viewpoint changes, and <a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO</a> reports a fall from above 90% to 0% when object starting positions change. Every model the <a href="https://arxiv.org/abs/2503.01238">⋆-Gen authors</a> and the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL group</a> tested showed the same weak semantic generalisation.</p>
 
+<figure>
+      <img src="media/stargen-results.jpg" alt="Bar chart from the star-Gen paper showing task progress across generalisation axes on Bridge V2, with most axes far below the in-distribution baseline." loading="lazy">
+      <figcaption><b>The same shape, on different hardware and a different model.</b> ⋆-Gen's Bridge V2 results, modified from <a href="https://arxiv.org/abs/2503.01238">Gao et al.</a> They ran more than 1,600 trials across 14 axes and found no model that held up on most of them. My 17 conditions on a UR5e reproduce the pattern at a much smaller scale.</figcaption>
+    </figure>
+
     <p class="tcap">Table 3. Where generalisation gets measured.</p>
       <div class="tscroll">
         <table>
@@ -710,6 +708,13 @@ footer cite{font-style:italic}
 
 <footer>
   <div class="wrap">
+    <h2>Figure credits</h2>
+    <ul>
+      <li>The DROID workspace photograph is modified from <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Wang, Leonard, Daniilidis, Jayaraman and Hu, <cite>Evaluating π₀ in the Wild</cite></a>, Penn PAL Lab.</li>
+      <li>The ⋆-Gen results chart is modified from <a href="https://arxiv.org/abs/2503.01238">Gao, Belkhale, Dasari, Balakrishna, Shah and Sadigh, <cite>A Taxonomy for Evaluating Generalist Robot Manipulation Policies</cite></a>, arXiv:2503.01238.</li>
+      <li>All other figures are my own, from the thesis.</li>
+    </ul>
+
     <h2>Cite the thesis</h2>
     <ul>
       <li>Skrodelis, L. P. (2026). <cite>Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment</cite>. Master's thesis (30 ECTS), Robotics and Computer Engineering Curriculum, Institute of Technology, University of Tartu. Supervisors: Karl Kruusamäe, PhD, and Agnes Luhtaru, MSc.</li>

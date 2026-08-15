@@ -124,6 +124,15 @@ code{font-family:var(--mono);font-size:.86em;background:var(--faint);padding:.1e
 .abstract{font-size:1.06em;line-height:1.66;color:var(--ink);margin:0 0 var(--rhythm)}
 .abstract::first-letter{font-size:2.6em;line-height:.86;float:left;font-weight:650;
   padding:.06em .12em 0 0;color:var(--ink)}
+/* Where the browser supports real drop-cap metrics, use them: initial-letter
+   sinks the glyph exactly 2 lines and sets its baseline on the 2nd baseline,
+   which the float approach can only approximate. The negative left margin
+   cancels the T's side bearing so its stem meets the text block edge. */
+@supports (initial-letter:2) or (-webkit-initial-letter:2){
+  .abstract::first-letter{-webkit-initial-letter:2;initial-letter:2;
+    float:none;font-size:inherit;line-height:inherit;
+    padding:0;margin:0 .16em 0 -.055em}
+}
 .provenance{font-size:.92rem;line-height:1.6;color:var(--muted);margin:0;text-align:left}
 .provenance cite{font-style:italic}
 

@@ -184,7 +184,11 @@ li::marker{color:var(--quiet)}
 
 /* ── figures ──────────────────────────────────────────── */
 figure{margin:calc(var(--rhythm)*2.2) 0;width:100%}
-figure img{display:block;width:100%;height:auto;border:1px solid var(--rule);border-radius:2px}
+figure img{display:block;width:100%;height:auto;border:0}
+/* A frame separates a photograph from the page. A chart on white does not
+   need one, and the inline SVG charts have none, so a box on the PNG ones
+   made them read as pasted screenshots. */
+figure.hero img,figure.photo img{border:1px solid var(--rule);border-radius:2px}
 figcaption{font-size:.96rem;line-height:1.62;color:var(--muted);margin:.9rem 0 0;
   font-style:italic}
 figcaption b{color:var(--ink);font-weight:650;font-style:normal}
@@ -708,7 +712,7 @@ footer cite{font-style:italic}
     </figure>
 
     <figure class="small">
-      <img src="media/shoulder-viewpoints.png" alt="Top-view diagram of the workspace showing three shoulder-camera positions: default at the back-left, back-right, and front-left." loading="lazy" width="1000" height="923">
+      <img src="media/shoulder-viewpoints.png" alt="Top-view diagram of the workspace showing three shoulder-camera positions: default at the back-left, back-right, and front-left." loading="lazy" width="925" height="854">
       <figcaption><b>The 3 shoulder-camera positions.</b> Cam 1 is where every episode was recorded. Back-right cost 15 points, front-left cost 55.</figcaption>
     </figure>
 
@@ -731,7 +735,7 @@ footer cite{font-style:italic}
     <p>2 conclusions follow from the shape of that list. The policy appears to treat the camera image as a fixed coordinate frame rather than inferring the geometry of the scene, so any change to the frame moves it off the mapping it learned. And the language instruction is too weak to override the visual prior, because whenever a trained object was in view the policy went to it on 4 of 5 trials.</p>
     <p>Neither finding is unique to my setup. Both are among the axes section 7 identifies as hardest across every benchmark, and every model the ⋆-Gen authors and the Penn PAL group tested showed the same weak semantic generalisation.</p>
 
-<figure class="wide">
+<figure class="wide photo">
       <div class="figscroll"><img src="ur5/docs/figures/eval_rq2_all_images_5wide.png" alt="Grid of twelve photographs showing the out-of-distribution test scenes." loading="lazy" width="3254" height="2010"></div>
       <figcaption><b>1 factor changes per scene.</b> 12 of the 17 conditions.</figcaption>
     </figure>

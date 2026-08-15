@@ -190,6 +190,7 @@ figcaption{font-size:.96rem;line-height:1.62;color:var(--muted);margin:.9rem 0 0
 figcaption b{color:var(--ink);font-weight:650;font-style:normal}
 figure video{display:block;width:100%;height:auto;border:1px solid var(--rule);
   border-radius:2px;background:#000}
+.figscroll img{display:block}
 .figgrid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
 .figgrid img{width:100%;height:auto;border:1px solid var(--rule);border-radius:2px}
 
@@ -301,8 +302,15 @@ footer cite{font-style:italic}
   .masthead{padding:3.2rem 0 2rem}
   body{font-size:1.04rem}
   p,ul,ol,.callout{text-align:left}
-  figure.wide{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  figure.wide img{min-width:620px;max-width:none;width:auto}
+  .figscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;background:
+    linear-gradient(to right, var(--paper) 30%, rgba(255,255,255,0)) left center,
+    linear-gradient(to left, var(--paper) 30%, rgba(255,255,255,0)) right center,
+    radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.18), transparent) left center,
+    radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.18), transparent) right center;
+  background-repeat:no-repeat;
+  background-size:40px 100%,40px 100%,14px 100%,14px 100%;
+  background-attachment:local,local,scroll,scroll}
+  .figscroll img{width:560px;min-width:0;max-width:none;height:auto}
   .tight{font-size:.85rem}
   .figgrid{grid-template-columns:1fr}
 }
@@ -319,6 +327,27 @@ footer cite{font-style:italic}
     transition:stroke-dashoffset 1s cubic-bezier(.3,.7,.3,1)}
   html.js svg.chartanim .cdot{opacity:0;transition:none}
   html.js svg.chartanim.chart-in .cdot{opacity:1;transition:opacity .25s ease-out var(--dd,0s)}
+}
+
+/* Horizontally scrollable blocks show an edge shadow only while there is more
+   content that way. Stronger on small screens, where swiping is the only way. */
+.cite pre{background:
+    linear-gradient(to right, var(--faint) 30%, rgba(247,247,247,0)) left center,
+    linear-gradient(to left, var(--faint) 30%, rgba(247,247,247,0)) right center,
+    radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.12), transparent) left center,
+    radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.12), transparent) right center;
+  background-repeat:no-repeat;
+  background-size:36px 100%,36px 100%,13px 100%,13px 100%;
+  background-attachment:local,local,scroll,scroll}
+@media (max-width:34rem){
+  .tscroll,.figscroll{background-size:44px 100%,44px 100%,20px 100%,20px 100%}
+  .tscroll{background-image:
+    linear-gradient(to right, var(--paper) 30%, rgba(255,255,255,0)),
+    linear-gradient(to left, var(--paper) 30%, rgba(255,255,255,0)),
+    radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.22), transparent),
+    radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.22), transparent)}
+  .tight{font-size:.78rem}
+  .tight th,.tight td{padding-left:.45rem;padding-right:.45rem}
 }
 </style>
 <script>document.documentElement.classList.add("js")</script>
@@ -533,7 +562,7 @@ footer cite{font-style:italic}
     <p>I tried 7 remedies to decouple them: smoothing the gripper ramps so the open-to-closed transition spreads over several frames, oversampling the transition frames five-fold, weighting the gripper dimension in the loss, freezing the SigLIP visual backbone, lowering the learning rate, applying stronger crop and colour augmentation, and thresholding the gripper command at inference. None of them made the gripper close on the robot. At this scale a narrow dataset covering the deployment condition beat a varied one, though this experiment cannot separate episode count from dataset composition.</p>
 
     <figure>
-      <img src="ur5/docs/figures/eval_dataset_size.png" alt="Bar chart of average task progress against fine-tuning dataset size, peaking at ten episodes." loading="lazy">
+      <img src="ur5/docs/figures/eval_dataset_size.png" alt="Bar chart of average task progress against fine-tuning dataset size, peaking at ten episodes." loading="lazy" width="2117" height="1513">
       <figcaption><b>More demonstrations made the policy worse.</b> Only the 10-episode bar has per-trial data behind it, shown with its min–max range.</figcaption>
     </figure>
 
@@ -564,7 +593,7 @@ footer cite{font-style:italic}
     <p>At step 120 the policy scored zero, stopping about 15 cm short of the block. At step 150 it worked: 0.80 in-distribution, and 0.70 out-of-distribution, which means it generalised to block positions it had never seen. At step 210 the in-distribution score was still 0.75 and the out-of-distribution score had collapsed to 0.25, with every trial failing at the pick. The training loss gave no warning: it sat low and flat across the whole window, and at step 210 it was no higher than at 150.</p>
 
     <figure>
-      <img src="ur5/docs/figures/eval_id_vs_ood.png" alt="Grouped bar chart of in-distribution and out-of-distribution task progress across checkpoints with the training loss overlaid." loading="lazy">
+      <img src="ur5/docs/figures/eval_id_vs_ood.png" alt="Grouped bar chart of in-distribution and out-of-distribution task progress across checkpoints with the training loss overlaid." loading="lazy" width="2899" height="2082">
       <figcaption><b>The gap opens between steps 150 and 210 while the loss stays flat.</b> 5 trials per checkpoint per condition.</figcaption>
     </figure>
 
@@ -573,7 +602,7 @@ footer cite{font-style:italic}
     <p>The policy also got faster as it memorised. The mean time to complete the pick fell from 2:37 at step 150 to 0:26 at step 210, which is consistent with an arm going directly to positions it had already seen instead of searching for the object.</p>
 
     <figure>
-      <img src="ur5/docs/figures/eval_timing.png" alt="Grouped bar chart of mean trial duration per stage across checkpoints, in and out of distribution." loading="lazy">
+      <img src="ur5/docs/figures/eval_timing.png" alt="Grouped bar chart of mean trial duration per stage across checkpoints, in and out of distribution." loading="lazy" width="2573" height="2069">
       <figcaption><b>The policy got faster as it memorised, then stopped gripping.</b> Step-210 out-of-distribution is a reach-only bar.</figcaption>
     </figure>
 
@@ -587,7 +616,7 @@ footer cite{font-style:italic}
     <p>As trained here, π₀.₅ predicts a chunk of 15 actions per call. The bridge does not have to execute all of them. It can play the first <em>K</em> and then re-query with a fresh observation. That number is not learned, does not appear in any config the trainer sees, and has no effect at all on the loss. On the same checkpoint, the same dataset and the same weights, it moves task progress from 0.25 to 0.80.</p>
 
     <figure>
-      <img src="ur5/docs/figures/eval_horizon.png" alt="Bar chart of task progress against the number of actions executed per inference call, forming an inverted U peaking at six." loading="lazy">
+      <img src="ur5/docs/figures/eval_horizon.png" alt="Bar chart of task progress against the number of actions executed per inference call, forming an inverted U peaking at six." loading="lazy" width="2447" height="1513">
       <figcaption><b>The optimum sits between a third and a half of the training horizon, not at the horizon.</b> Step-150 checkpoint, 5 trials each. K = 15 plays the whole predicted chunk.</figcaption>
     </figure>
 
@@ -630,7 +659,7 @@ footer cite{font-style:italic}
     <p>Testing on real hardware is rarer and more expensive. The ⋆-Gen authors ran their trials across 2 case studies, Bridge V2 and ALOHA 2, and no model held up reliably on most axes. RoboChallenge is the closest comparison to my own setup, because its 30 tasks include a UR5.</p>
 
     <figure class="small">
-      <img src="media/stargen-results.jpg" alt="Bar chart from the star-Gen paper showing task progress across generalisation axes on Bridge V2, with most axes far below the in-distribution baseline." loading="lazy">
+      <img src="media/stargen-results.jpg" alt="Bar chart from the star-Gen paper showing task progress across generalisation axes on Bridge V2, with most axes far below the in-distribution baseline." loading="lazy" width="580" height="659">
       <figcaption><b>No model holds up across the axes.</b> ⋆-Gen's Bridge V2 case study, modified from <a href="https://arxiv.org/abs/2503.01238">Gao et al.</a></figcaption>
     </figure>
 
@@ -647,7 +676,7 @@ footer cite{font-style:italic}
     <p>A working policy is not the end of the question. The interesting part is where it stops working, so I tested it against 17 out-of-distribution conditions using the <a href="https://arxiv.org/abs/2503.01238">⋆-Gen taxonomy</a>. One factor changes at a time, and everything else stays close to training. Across all 85 trials, none completed the release stage.</p>
 
     <figure class="wide">
-      <img src="ur5/docs/figures/eval_rq2_overview.png" alt="Bar chart of task progress across 17 out-of-distribution conditions grouped by ⋆-Gen axis, against the in-distribution baseline." loading="lazy">
+      <div class="figscroll"><img src="ur5/docs/figures/eval_rq2_overview.png" alt="Bar chart of task progress across 17 out-of-distribution conditions grouped by ⋆-Gen axis, against the in-distribution baseline." loading="lazy" width="4450" height="3006"></div>
       <figcaption><b>Not one condition reached the baseline, and none completed release.</b> 5 trials each. Dashed line is the 80% baseline.</figcaption>
     </figure>
 
@@ -676,7 +705,7 @@ footer cite{font-style:italic}
     <p>Neither finding is unique to my setup. Both are among the axes section 7 identifies as hardest across every benchmark, and every model the ⋆-Gen authors and the Penn PAL group tested showed the same weak semantic generalisation.</p>
 
 <figure class="wide">
-      <img src="ur5/docs/figures/eval_rq2_all_images_5wide.png" alt="Grid of twelve photographs showing the out-of-distribution test scenes." loading="lazy">
+      <div class="figscroll"><img src="ur5/docs/figures/eval_rq2_all_images_5wide.png" alt="Grid of twelve photographs showing the out-of-distribution test scenes." loading="lazy" width="3254" height="2010"></div>
       <figcaption><b>1 factor changes per scene.</b> 12 of the 17 conditions.</figcaption>
     </figure>
     <p>Laid out together, the scenes make the failure boundary look arbitrary, and that is the point. What mostly separates the conditions that held up from the ones that collapsed is how far each sits from the 10 episodes the policy was trained on. A human looking at these photographs would call all 17 the same task.</p>

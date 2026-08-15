@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>87 runs to a working policy: fine-tuning π₀.₅ onto a UR5e</title>
+<title>87 runs to a working policy: a practical guide to fine-tuning VLAs</title>
 <link rel="canonical" href="https://lpslv.github.io/openpi/">
 <meta name="description" content="Fine-tuning the π₀.₅ vision-language-action model onto a UR5e with no matching checkpoint: 87 training runs, 17 out-of-distribution conditions, 2,246 issues.">
 <meta name="author" content="Lenards Skrodelis">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 
 <meta property="og:type" content="article">
-<meta property="og:title" content="87 runs to a working policy">
+<meta property="og:title" content="87 runs to a working policy: a practical guide to fine-tuning VLAs">
 <meta property="og:description" content="Papers report the runs that worked. Issue trackers report the rest. What it takes to fine-tune a vision-language-action model onto a robot arm with no checkpoint waiting for it.">
 <meta property="og:url" content="https://lpslv.github.io/openpi/">
 <meta property="og:image" content="https://lpslv.github.io/openpi/ur5/docs/figures/blog_og_card.png">
@@ -22,7 +22,7 @@
 <meta property="article:author" content="Lenards Skrodelis">
 
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="87 runs to a working policy">
+<meta name="twitter:title" content="87 runs to a working policy: a practical guide to fine-tuning VLAs">
 <meta name="twitter:description" content="Papers report the runs that worked. Issue trackers report the rest. Fine-tuning π₀.₅ onto a UR5e, and what 2,246 VLA issues say about who answers when it breaks.">
 <meta name="twitter:image" content="https://lpslv.github.io/openpi/ur5/docs/figures/blog_og_card.png">
 
@@ -114,7 +114,8 @@ code{font-family:var(--mono);font-size:.86em;background:var(--faint);padding:.1e
 
 /* ── masthead ─────────────────────────────────────────── */
 .masthead{padding:4.2rem 0 2.6rem}
-.standfirst{font-size:1.42rem;line-height:1.38;font-weight:400;color:#2b2b2b;
+.h1sub{display:block;font-size:1.72rem;line-height:1.22;font-weight:400;color:#333;margin-top:.55rem;letter-spacing:-.01em;text-wrap:pretty}
+.standfirst{font-size:1.2rem;line-height:1.45;font-weight:400;color:var(--muted);
   margin:0 0 calc(var(--rhythm)*1.25);text-align:left;hyphens:manual;text-wrap:pretty}
 .byline{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .85rem;
   font-size:.92rem;color:var(--muted);margin:0 0 calc(var(--rhythm)*1.5);
@@ -284,7 +285,6 @@ footer h2{font-size:1.02rem;color:var(--ink);margin:2rem 0 .8rem;font-weight:700
 footer h2:first-child{margin-top:0}
 footer ul{list-style:none;padding:0;margin:0}
 footer li{margin:0 0 .5rem}
-.reflist li{margin:0 0 .65rem;padding-left:1rem;text-indent:-1rem}
 footer cite{font-style:italic}
 
 /* ── contents ─────────────────────────────────────────── */
@@ -308,7 +308,22 @@ footer cite{font-style:italic}
   .tight{font-size:.85rem}
   .figgrid{grid-template-columns:1fr}
 }
+
+
+/* Charts start collapsed and play once on scroll. Scoped to html.js so that
+   without JS, and with reduced motion, they simply render finished. */
+@media (prefers-reduced-motion: no-preference){
+  html.js svg.chartanim .growx{transform:scaleX(.001);transform-origin:206px 0;transition:none}
+  html.js svg.chartanim.chart-in .growx{transform:scaleX(1);
+    transition:transform .7s cubic-bezier(.22,.75,.2,1) var(--d,0s)}
+  html.js svg.chartanim .cline{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);transition:none}
+  html.js svg.chartanim.chart-in .cline{stroke-dashoffset:0;
+    transition:stroke-dashoffset 1s cubic-bezier(.3,.7,.3,1)}
+  html.js svg.chartanim .cdot{opacity:0;transition:none}
+  html.js svg.chartanim.chart-in .cdot{opacity:1;transition:opacity .25s ease-out var(--dd,0s)}
+}
 </style>
+<script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
 
@@ -323,8 +338,8 @@ footer cite{font-style:italic}
 
 <header class="masthead">
   <div class="wrap">
-    <h1>87 runs to a working policy</h1>
-    <p class="standfirst">What went wrong, and what went right, putting a vision-language-action model on a robot arm it had never seen, in a room it had never seen.</p>
+    <h1>87 runs to a working policy<span class="h1sub">A practical guide to fine-tuning a vision-language-action model on your own robot</span></h1>
+    <p class="standfirst">What went wrong, and what went right, on a robot arm it had never seen, in a room it had never seen.</p>
     <div class="byline">
       <span class="author">Lenards Skrodelis</span>
       <time datetime="2026-08-13">13 August 2026</time>
@@ -455,7 +470,7 @@ footer cite{font-style:italic}
     <p>The more interesting column is the middle one. On openpi, <b>32% of issues are answered only by other users</b>, with nobody from the project involved. I read 128 answered threads closely, staff-answered and user-answered alike, and graded the best reply in each: 55% contained a concrete fix or explanation that would plausibly unblock the reporter, another 29% a workaround or useful pointer. Independent users supplied that best answer in roughly 2 cases out of 5.</p>
 
     <figure class="wide">
-      <svg viewBox="0 0 680 442" role="img" aria-label="Who answers an openpi issue, by topic"><line x1="311.5" y1="24" x2="311.5" y2="402" class="cgrid"/><text x="311.5" y="16" class="cl" text-anchor="middle">25%</text><line x1="417.0" y1="24" x2="417.0" y2="402" class="cgrid"/><text x="417.0" y="16" class="cl" text-anchor="middle">50%</text><line x1="522.5" y1="24" x2="522.5" y2="402" class="cgrid"/><text x="522.5" y="16" class="cl" text-anchor="middle">75%</text><line x1="628.0" y1="24" x2="628.0" y2="402" class="cgrid"/><text x="628.0" y="16" class="cl" text-anchor="middle">100%</text><text x="197" y="54" class="cl" text-anchor="end">Robot integration</text><rect x="206.0" y="45" width="253.2" height="13" class="seg-staff"/><rect x="459.2" y="45" width="96.5" height="13" class="seg-users"/><rect x="555.7" y="45" width="72.3" height="13" class="seg-none"/><text x="676" y="55" class="cl faint" text-anchor="end">n=35</text><text x="197" y="88" class="cl" text-anchor="end">Training errors</text><rect x="206.0" y="79" width="162.3" height="13" class="seg-staff"/><rect x="368.3" y="79" width="183.9" height="13" class="seg-users"/><rect x="552.3" y="79" width="75.7" height="13" class="seg-none"/><text x="676" y="89" class="cl faint" text-anchor="end">n=39</text><text x="197" y="122" class="cl" text-anchor="end">Deployment errors</text><rect x="206.0" y="113" width="223.4" height="13" class="seg-staff"/><rect x="429.4" y="113" width="111.7" height="13" class="seg-users"/><rect x="541.1" y="113" width="86.9" height="13" class="seg-none"/><text x="676" y="123" class="cl faint" text-anchor="end">n=34</text><text x="197" y="156" class="cl" text-anchor="end">Data conversion</text><rect x="206.0" y="147" width="135.4" height="13" class="seg-staff"/><rect x="341.4" y="147" width="199.1" height="13" class="seg-users"/><rect x="540.4" y="147" width="87.6" height="13" class="seg-none"/><text x="676" y="157" class="cl faint" text-anchor="end">n=53</text><text x="197" y="190" class="cl" text-anchor="end">Model behaviour</text><rect x="206.0" y="181" width="154.4" height="13" class="seg-staff"/><rect x="360.4" y="181" width="175.0" height="13" class="seg-users"/><rect x="535.4" y="181" width="92.6" height="13" class="seg-none"/><text x="676" y="191" class="cl faint" text-anchor="end">n=41</text><text x="197" y="224" class="cl" text-anchor="end">JAX/PyTorch convert</text><rect x="206.0" y="215" width="32.5" height="13" class="seg-staff"/><rect x="238.5" y="215" width="292.2" height="13" class="seg-users"/><rect x="530.6" y="215" width="97.4" height="13" class="seg-none"/><text x="676" y="225" class="cl faint" text-anchor="end">n=13</text><text x="197" y="258" class="cl" text-anchor="end">Install / environment</text><rect x="206.0" y="249" width="178.2" height="13" class="seg-staff"/><rect x="384.2" y="249" width="131.3" height="13" class="seg-users"/><rect x="515.5" y="249" width="112.5" height="13" class="seg-none"/><text x="676" y="259" class="cl faint" text-anchor="end">n=45</text><text x="197" y="292" class="cl" text-anchor="end">Training how-to</text><rect x="206.0" y="283" width="194.8" height="13" class="seg-staff"/><rect x="400.8" y="283" width="113.6" height="13" class="seg-users"/><rect x="514.4" y="283" width="113.6" height="13" class="seg-none"/><text x="676" y="293" class="cl faint" text-anchor="end">n=52</text><text x="197" y="326" class="cl" text-anchor="end">Checkpoint release</text><rect x="206.0" y="317" width="257.9" height="13" class="seg-staff"/><rect x="463.9" y="317" width="46.9" height="13" class="seg-users"/><rect x="510.8" y="317" width="117.2" height="13" class="seg-none"/><text x="676" y="327" class="cl faint" text-anchor="end">n=18</text><text x="197" y="360" class="cl" text-anchor="end">Conceptual question</text><rect x="206.0" y="351" width="135.0" height="13" class="seg-staff"/><rect x="341.0" y="351" width="126.6" height="13" class="seg-users"/><rect x="467.6" y="351" width="160.4" height="13" class="seg-none"/><text x="676" y="361" class="cl faint" text-anchor="end">n=50</text><text x="197" y="394" class="cl" text-anchor="end">Feature request</text><rect x="206.0" y="385" width="28.1" height="13" class="seg-staff"/><rect x="234.1" y="385" width="140.7" height="13" class="seg-users"/><rect x="374.8" y="385" width="253.2" height="13" class="seg-none"/><text x="676" y="395" class="cl faint" text-anchor="end">n=15</text><rect x="14" y="415" width="11" height="11" class="seg-staff"/><text x="30" y="424" class="cl">from the project</text><rect x="250" y="415" width="11" height="11" class="seg-users"/><text x="266" y="424" class="cl">only other users</text><rect x="486" y="415" width="11" height="11" class="seg-none"/><text x="502" y="424" class="cl">nobody</text></svg>
+      <svg class="chartanim" viewBox="0 0 680 442" role="img" aria-label="Who answers an openpi issue, by topic"><line x1="311.5" y1="24" x2="311.5" y2="402" class="cgrid"/><text x="311.5" y="16" class="cl" text-anchor="middle">25%</text><line x1="417.0" y1="24" x2="417.0" y2="402" class="cgrid"/><text x="417.0" y="16" class="cl" text-anchor="middle">50%</text><line x1="522.5" y1="24" x2="522.5" y2="402" class="cgrid"/><text x="522.5" y="16" class="cl" text-anchor="middle">75%</text><line x1="628.0" y1="24" x2="628.0" y2="402" class="cgrid"/><text x="628.0" y="16" class="cl" text-anchor="middle">100%</text><text x="197" y="54" class="cl" text-anchor="end">Robot integration</text><g class="growx" style="--d:0.000s"><rect x="206.0" y="45" width="253.2" height="13" class="seg-staff"/><rect x="459.2" y="45" width="96.5" height="13" class="seg-users"/><rect x="555.7" y="45" width="72.3" height="13" class="seg-none"/></g><text x="676" y="55" class="cl faint" text-anchor="end">n=35</text><text x="197" y="88" class="cl" text-anchor="end">Training errors</text><g class="growx" style="--d:0.055s"><rect x="206.0" y="79" width="162.3" height="13" class="seg-staff"/><rect x="368.3" y="79" width="183.9" height="13" class="seg-users"/><rect x="552.3" y="79" width="75.7" height="13" class="seg-none"/></g><text x="676" y="89" class="cl faint" text-anchor="end">n=39</text><text x="197" y="122" class="cl" text-anchor="end">Deployment errors</text><g class="growx" style="--d:0.110s"><rect x="206.0" y="113" width="223.4" height="13" class="seg-staff"/><rect x="429.4" y="113" width="111.7" height="13" class="seg-users"/><rect x="541.1" y="113" width="86.9" height="13" class="seg-none"/></g><text x="676" y="123" class="cl faint" text-anchor="end">n=34</text><text x="197" y="156" class="cl" text-anchor="end">Data conversion</text><g class="growx" style="--d:0.165s"><rect x="206.0" y="147" width="135.4" height="13" class="seg-staff"/><rect x="341.4" y="147" width="199.1" height="13" class="seg-users"/><rect x="540.4" y="147" width="87.6" height="13" class="seg-none"/></g><text x="676" y="157" class="cl faint" text-anchor="end">n=53</text><text x="197" y="190" class="cl" text-anchor="end">Model behaviour</text><g class="growx" style="--d:0.220s"><rect x="206.0" y="181" width="154.4" height="13" class="seg-staff"/><rect x="360.4" y="181" width="175.0" height="13" class="seg-users"/><rect x="535.4" y="181" width="92.6" height="13" class="seg-none"/></g><text x="676" y="191" class="cl faint" text-anchor="end">n=41</text><text x="197" y="224" class="cl" text-anchor="end">JAX/PyTorch convert</text><g class="growx" style="--d:0.275s"><rect x="206.0" y="215" width="32.5" height="13" class="seg-staff"/><rect x="238.5" y="215" width="292.2" height="13" class="seg-users"/><rect x="530.6" y="215" width="97.4" height="13" class="seg-none"/></g><text x="676" y="225" class="cl faint" text-anchor="end">n=13</text><text x="197" y="258" class="cl" text-anchor="end">Install / environment</text><g class="growx" style="--d:0.330s"><rect x="206.0" y="249" width="178.2" height="13" class="seg-staff"/><rect x="384.2" y="249" width="131.3" height="13" class="seg-users"/><rect x="515.5" y="249" width="112.5" height="13" class="seg-none"/></g><text x="676" y="259" class="cl faint" text-anchor="end">n=45</text><text x="197" y="292" class="cl" text-anchor="end">Training how-to</text><g class="growx" style="--d:0.385s"><rect x="206.0" y="283" width="194.8" height="13" class="seg-staff"/><rect x="400.8" y="283" width="113.6" height="13" class="seg-users"/><rect x="514.4" y="283" width="113.6" height="13" class="seg-none"/></g><text x="676" y="293" class="cl faint" text-anchor="end">n=52</text><text x="197" y="326" class="cl" text-anchor="end">Checkpoint release</text><g class="growx" style="--d:0.440s"><rect x="206.0" y="317" width="257.9" height="13" class="seg-staff"/><rect x="463.9" y="317" width="46.9" height="13" class="seg-users"/><rect x="510.8" y="317" width="117.2" height="13" class="seg-none"/></g><text x="676" y="327" class="cl faint" text-anchor="end">n=18</text><text x="197" y="360" class="cl" text-anchor="end">Conceptual question</text><g class="growx" style="--d:0.495s"><rect x="206.0" y="351" width="135.0" height="13" class="seg-staff"/><rect x="341.0" y="351" width="126.6" height="13" class="seg-users"/><rect x="467.6" y="351" width="160.4" height="13" class="seg-none"/></g><text x="676" y="361" class="cl faint" text-anchor="end">n=50</text><text x="197" y="394" class="cl" text-anchor="end">Feature request</text><g class="growx" style="--d:0.550s"><rect x="206.0" y="385" width="28.1" height="13" class="seg-staff"/><rect x="234.1" y="385" width="140.7" height="13" class="seg-users"/><rect x="374.8" y="385" width="253.2" height="13" class="seg-none"/></g><text x="676" y="395" class="cl faint" text-anchor="end">n=15</text><rect x="14" y="415" width="11" height="11" class="seg-staff"/><text x="30" y="424" class="cl">from the project</text><rect x="250" y="415" width="11" height="11" class="seg-users"/><text x="266" y="424" class="cl">only other users</text><rect x="486" y="415" width="11" height="11" class="seg-none"/><text x="502" y="424" class="cl">nobody</text></svg>
       <figcaption><b>Issues with a reproducible error get answered. Conceptual questions and feature requests do not.</b> Classified by reading each issue; 395 of 490 could be classified.</figcaption>
     </figure>
 
@@ -464,7 +479,7 @@ footer cite{font-style:italic}
     <p>What the trackers cannot tell you is how many of those answers were right. My grading measures whether a reply looks like it would help, not whether it did. 2 accounts in the openpi tracker post templated, plausible-sounding diagnoses across 5 to 8 unrelated issues while promoting their own tools, and they inflate any count of "somebody replied".</p>
 
     <figure class="wide">
-      <div class="smallmult"><svg viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for openpi"><text x="44" y="12" class="ct">openpi</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M103.3,48.2 L123.1,46.1 L142.9,102.0 L162.7,122.7 L182.4,128.0 L202.2,128.0" class="cline accent"/><circle cx="103.3" cy="48.2" r="2.6" class="cdot"/><circle cx="123.1" cy="46.1" r="2.6" class="cdot"/><circle cx="142.9" cy="102.0" r="2.6" class="cdot"/><circle cx="162.7" cy="122.7" r="2.6" class="cdot"/><circle cx="182.4" cy="128.0" r="2.6" class="cdot"/><circle cx="202.2" cy="128.0" r="2.6" class="cdot"/><text x="44" y="150" class="cl tick">2025Q1</text><text x="222" y="150" class="cl tick" text-anchor="end">2026Q2</text><text x="206.2" y="131.0" class="cv accent">0%</text></svg><svg viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for OpenVLA"><text x="44" y="12" class="ct">OpenVLA</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M63.8,37.6 L83.6,41.8 L103.3,120.1 L123.1,128.0 L142.9,128.0 L162.7,128.0" class="cline accent"/><circle cx="63.8" cy="37.6" r="2.6" class="cdot"/><circle cx="83.6" cy="41.8" r="2.6" class="cdot"/><circle cx="103.3" cy="120.1" r="2.6" class="cdot"/><circle cx="123.1" cy="128.0" r="2.6" class="cdot"/><circle cx="142.9" cy="128.0" r="2.6" class="cdot"/><circle cx="162.7" cy="128.0" r="2.6" class="cdot"/><text x="44" y="150" class="cl tick">2024Q3</text><text x="222" y="150" class="cl tick" text-anchor="end">2025Q4</text><text x="166.7" y="131.0" class="cv accent">0%</text></svg><svg viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for lerobot"><text x="44" y="12" class="ct">lerobot</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M44.0,25.0 L63.8,43.7 L83.6,69.1 L103.3,75.5 L123.1,77.8 L142.9,77.5 L162.7,61.3 L182.4,75.4 L202.2,86.4 L222.0,109.1" class="cline accent"/><circle cx="44.0" cy="25.0" r="2.6" class="cdot"/><circle cx="63.8" cy="43.7" r="2.6" class="cdot"/><circle cx="83.6" cy="69.1" r="2.6" class="cdot"/><circle cx="103.3" cy="75.5" r="2.6" class="cdot"/><circle cx="123.1" cy="77.8" r="2.6" class="cdot"/><circle cx="142.9" cy="77.5" r="2.6" class="cdot"/><circle cx="162.7" cy="61.3" r="2.6" class="cdot"/><circle cx="182.4" cy="75.4" r="2.6" class="cdot"/><circle cx="202.2" cy="86.4" r="2.6" class="cdot"/><circle cx="222.0" cy="109.1" r="2.6" class="cdot"/><text x="44" y="150" class="cl tick">2024Q2</text><text x="222" y="150" class="cl tick" text-anchor="end">2026Q3</text><text x="226.0" y="112.1" class="cv accent">18%</text></svg></div>
+      <div class="smallmult"><svg class="chartanim" style="--len:149" viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for openpi"><text x="44" y="12" class="ct">openpi</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M103.3,48.2 L123.1,46.1 L142.9,102.0 L162.7,122.7 L182.4,128.0 L202.2,128.0" class="cline accent"/><circle cx="103.3" cy="48.2" r="2.6" class="cdot" style="--dd:0.45s"/><circle cx="123.1" cy="46.1" r="2.6" class="cdot" style="--dd:0.55s"/><circle cx="142.9" cy="102.0" r="2.6" class="cdot" style="--dd:0.65s"/><circle cx="162.7" cy="122.7" r="2.6" class="cdot" style="--dd:0.75s"/><circle cx="182.4" cy="128.0" r="2.6" class="cdot" style="--dd:0.85s"/><circle cx="202.2" cy="128.0" r="2.6" class="cdot" style="--dd:0.95s"/><text x="44" y="150" class="cl tick">2025Q1</text><text x="222" y="150" class="cl tick" text-anchor="end">2026Q2</text><text x="206.2" y="131.0" class="cv accent">0%</text></svg><svg class="chartanim" style="--len:162" viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for OpenVLA"><text x="44" y="12" class="ct">OpenVLA</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M63.8,37.6 L83.6,41.8 L103.3,120.1 L123.1,128.0 L142.9,128.0 L162.7,128.0" class="cline accent"/><circle cx="63.8" cy="37.6" r="2.6" class="cdot" style="--dd:0.45s"/><circle cx="83.6" cy="41.8" r="2.6" class="cdot" style="--dd:0.55s"/><circle cx="103.3" cy="120.1" r="2.6" class="cdot" style="--dd:0.65s"/><circle cx="123.1" cy="128.0" r="2.6" class="cdot" style="--dd:0.75s"/><circle cx="142.9" cy="128.0" r="2.6" class="cdot" style="--dd:0.85s"/><circle cx="162.7" cy="128.0" r="2.6" class="cdot" style="--dd:0.95s"/><text x="44" y="150" class="cl tick">2024Q3</text><text x="222" y="150" class="cl tick" text-anchor="end">2025Q4</text><text x="166.7" y="131.0" class="cv accent">0%</text></svg><svg class="chartanim" style="--len:223" viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for lerobot"><text x="44" y="12" class="ct">lerobot</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M44.0,25.0 L63.8,43.7 L83.6,69.1 L103.3,75.5 L123.1,77.8 L142.9,77.5 L162.7,61.3 L182.4,75.4 L202.2,86.4 L222.0,109.1" class="cline accent"/><circle cx="44.0" cy="25.0" r="2.6" class="cdot" style="--dd:0.45s"/><circle cx="63.8" cy="43.7" r="2.6" class="cdot" style="--dd:0.51s"/><circle cx="83.6" cy="69.1" r="2.6" class="cdot" style="--dd:0.56s"/><circle cx="103.3" cy="75.5" r="2.6" class="cdot" style="--dd:0.62s"/><circle cx="123.1" cy="77.8" r="2.6" class="cdot" style="--dd:0.67s"/><circle cx="142.9" cy="77.5" r="2.6" class="cdot" style="--dd:0.73s"/><circle cx="162.7" cy="61.3" r="2.6" class="cdot" style="--dd:0.78s"/><circle cx="182.4" cy="75.4" r="2.6" class="cdot" style="--dd:0.84s"/><circle cx="202.2" cy="86.4" r="2.6" class="cdot" style="--dd:0.89s"/><circle cx="222.0" cy="109.1" r="2.6" class="cdot" style="--dd:0.95s"/><text x="44" y="150" class="cl tick">2024Q2</text><text x="222" y="150" class="cl tick" text-anchor="end">2026Q3</text><text x="226.0" y="112.1" class="cv accent">18%</text></svg></div>
       <figcaption><b>Both research-lab projects were responsive at launch, then stopped.</b> lerobot, company-staffed, held near half. Its last quarter is still open.</figcaption>
     </figure>
 
@@ -718,58 +733,32 @@ footer cite{font-style:italic}
       <li>All other figures are my own, from the thesis.</li>
     </ul>
 
-    <h2>Cite the thesis</h2>
-    <ul>
-      <li>Skrodelis, L. P. (2026). <cite>Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment</cite>. Master's thesis (30 ECTS), Robotics and Computer Engineering Curriculum, Institute of Technology, University of Tartu. Supervisors: Karl Kruusamäe, PhD, and Agnes Luhtaru, MSc.</li>
-    </ul>
-
-    <div class="cite">
-      <div class="cite-head">
-        <span>BibTeX</span>
-        <button type="button" data-copy="bibtex">Copy</button>
-      </div>
-      <pre id="bibtex">@mastersthesis{skrodelis2026vla,
-  author  = {Skrodelis, Lenards Patriks},
-  title   = {Adaptation and Generalisation of a Vision-Language-Action
-             Model on a New Embodiment},
-  school  = {University of Tartu, Institute of Technology},
-  type    = {Master's thesis},
-  address = {Tartu, Estonia},
-  year    = {2026},
-  note    = {Supervisors: Karl Kruusam\"{a}e and Agnes Luhtaru}
+    <h2>Cite this article</h2>
+      <ul>
+        <li>Skrodelis, L. P. (2026). <cite>87 runs to a working policy: a practical guide to fine-tuning VLAs</cite>. <a href="https://lpslv.github.io/openpi/">lpslv.github.io/openpi</a>. Based on the author's master's thesis, <cite>Adaptation and Generalisation of a Vision-Language-Action Model on a New Embodiment</cite>, Institute of Technology, University of Tartu, supervised by Karl Kruusamäe and Agnes Luhtaru.</li>
+      </ul>
+      <div class="cite">
+        <div class="cite-head">
+          <span>BibTeX</span>
+          <button type="button" data-copy="bibtex">Copy</button>
+        </div>
+        <pre id="bibtex">@misc{skrodelis2026runs,
+  author       = {Skrodelis, Lenards Patriks},
+  title        = {87 runs to a working policy: a practical guide
+                  to fine-tuning VLAs},
+  year         = {2026},
+  howpublished = {\url{https://lpslv.github.io/openpi/}},
+  note         = {Based on the author's MSc thesis, University of Tartu}
 }</pre>
-    </div>
-
-    <div class="cite">
-      <div class="cite-head">
-        <span>Markdown</span>
-        <button type="button" data-copy="mdcite">Copy</button>
       </div>
-      <pre id="mdcite">Skrodelis, L. P. (2026). *Adaptation and Generalisation of a
-Vision-Language-Action Model on a New Embodiment*. Master's thesis,
-Institute of Technology, University of Tartu.</pre>
-    </div>
-
-    <h2>References</h2>
-    <ul class="reflist">
-      <li>Black K. et al. <a href="https://arxiv.org/abs/2504.16054">π₀.₅: A Vision-Language-Action Model with Open-World Generalization</a>. arXiv:2504.16054, 2025.</li>
-      <li>Black K. et al. <a href="https://arxiv.org/abs/2410.24164">π₀: A Vision-Language-Action Flow Model for General Robot Control</a>. arXiv:2410.24164, 2024.</li>
-      <li>Wang J., Leonard M., Daniilidis K., Jayaraman D., Hu E. S. <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Evaluating π₀ in the Wild: Strengths, Problems, and the Future of Generalist Robot Policies</a>. Penn PAL Lab.</li>
-      <li>Gao J. et al. <a href="https://arxiv.org/abs/2503.01238">A Taxonomy for Evaluating Generalist Robot Manipulation Policies</a> (⋆-Gen). arXiv:2503.01238, 2025.</li>
-      <li>Pertsch K. et al. <a href="https://arxiv.org/abs/2501.09747">FAST: Efficient Action Tokenization for Vision-Language-Action Models</a>. arXiv:2501.09747, 2025.</li>
-      <li>Kim M. J. et al. <a href="https://arxiv.org/abs/2406.09246">OpenVLA: An Open-Source Vision-Language-Action Model</a>. arXiv:2406.09246, 2024.</li>
-      <li>Kim M. J., Finn C., Liang P. <a href="https://arxiv.org/abs/2502.19645">Fine-Tuning Vision-Language-Action Models: Optimizing Speed and Success</a>. arXiv:2502.19645, 2025.</li>
-      <li>Su H. et al. <a href="https://arxiv.org/abs/2510.17369">Bridging Embodiment Gaps: Deploying Vision-Language-Action Models</a>. arXiv:2510.17369, 2025.</li>
-      <li>Hu Z. et al. <a href="https://arxiv.org/abs/2512.14031">Sample-Efficient Robot Skill Learning for Construction Tasks</a>. arXiv:2512.14031, 2025.</li>
-      <li>Li S. et al. <a href="https://arxiv.org/abs/2509.23121">Transferring Vision-Language-Action Models</a>. arXiv:2509.23121, 2025.</li>
-      <li>Chen H. et al. <a href="https://arxiv.org/abs/2506.23919">Goal-VLA</a>. arXiv:2506.23919, 2025.</li>
-      <li>Liu B. et al. <a href="https://arxiv.org/abs/2306.03310">LIBERO: Benchmarking Knowledge Transfer for Lifelong Robot Learning</a>. arXiv:2306.03310, 2023.</li>
-      <li>Fei S. et al. <a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a>. arXiv:2510.13626, 2025.</li>
-      <li>Zhou X. et al. <a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO: Towards Robust and Fair Evaluation of Vision-Language-Action Models Beyond Memorization</a>. arXiv:2510.03827, 2025.</li>
-      <li>Pumacay W. et al. <a href="https://arxiv.org/abs/2402.08191">THE COLOSSEUM: A Benchmark for Evaluating Generalization for Robotic Manipulation</a>. arXiv:2402.08191, 2024.</li>
-      <li>Yakefu A. et al. <a href="https://arxiv.org/abs/2510.17950">RoboChallenge</a>. arXiv:2510.17950, 2025.</li>
-      <li>openpi issue reports: <a href="https://github.com/Physical-Intelligence/openpi/issues/906">#906</a>, <a href="https://github.com/Physical-Intelligence/openpi/issues/912">#912</a>, <a href="https://github.com/Physical-Intelligence/openpi/issues/711">#711</a>. <a href="https://huggingface.co/blog/danaaubakirova/pi0fast-issues">LeRobot π₀-FAST port notes</a>.</li>
-    </ul>
+      <div class="cite">
+        <div class="cite-head">
+          <span>Markdown</span>
+          <button type="button" data-copy="mdcite">Copy</button>
+        </div>
+        <pre id="mdcite">Skrodelis, L. P. (2026). *87 runs to a working policy: a practical
+guide to fine-tuning VLAs*. https://lpslv.github.io/openpi/</pre>
+      </div>
 
 
     <p style="margin-top:2.5rem">π₀.₅ adaptation and generalisation on a UR5e · openpi fork · 2026</p>
@@ -862,6 +851,28 @@ Institute of Technology, University of Tartu.</pre>
   // this covers a direct link to the anchor
   var r=fig.getBoundingClientRect();
   if(r.top < innerHeight*1.1 && r.bottom > 0){ io.unobserve(fig); run(); }
+})();
+</script>
+<script>
+/* Charts play once when scrolled into view. If anything here fails the charts
+   stay collapsed, so bail out by finishing them rather than leaving them blank. */
+(function(){
+  var charts=[].slice.call(document.querySelectorAll('svg.chartanim'));
+  if(!charts.length) return;
+  var finish=function(){ charts.forEach(function(s){ s.classList.add('chart-in'); }); };
+  if(!('IntersectionObserver' in window)){ finish(); return; }
+  try{
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){ io.unobserve(e.target); e.target.classList.add('chart-in'); }
+      });
+    },{threshold:0.15, rootMargin:'0px 0px -8% 0px'});
+    charts.forEach(function(s){
+      io.observe(s);
+      var r=s.getBoundingClientRect();
+      if(r.top < innerHeight && r.bottom > 0){ io.unobserve(s); s.classList.add('chart-in'); }
+    });
+  }catch(err){ finish(); }
 })();
 </script>
 </body>

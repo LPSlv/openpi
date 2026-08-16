@@ -122,17 +122,13 @@ code{font-family:var(--mono);font-size:.86em;background:var(--faint);padding:.1e
 .byline .author{color:var(--ink);font-weight:650}
 .byline a{color:var(--muted)}
 .abstract{font-size:1.06em;line-height:1.66;color:var(--ink);margin:0 0 var(--rhythm)}
-.abstract::first-letter{font-size:2.6em;line-height:.86;float:left;font-weight:650;
-  padding:.06em .12em 0 0;color:var(--ink)}
-/* Where the browser supports real drop-cap metrics, use them: initial-letter
-   sinks the glyph exactly 2 lines and sets its baseline on the 2nd baseline,
-   which the float approach can only approximate. The negative left margin
-   cancels the T's side bearing so its stem meets the text block edge. */
-@supports (initial-letter:2) or (-webkit-initial-letter:2){
-  .abstract::first-letter{-webkit-initial-letter:2;initial-letter:2;
-    float:none;font-size:inherit;line-height:inherit;
-    padding:0;margin:0 .16em 0 -.055em}
-}
+/* Drop cap tuned by measuring rendered ink: 3.45em gives a cap height that
+   spans line 1's cap top to line 2's baseline, and line-height .86 keeps the
+   float box under 2 line-heights so it never pushes into a 3rd line. One rule
+   for every browser, rather than initial-letter in some and a fallback in
+   others that lands somewhere else. */
+.abstract::first-letter{float:left;font-size:3.45em;line-height:.86;font-weight:650;
+  margin:.08em .12em 0 0;padding:0;color:var(--ink)}
 .provenance{font-size:.92rem;line-height:1.6;color:var(--muted);margin:0;text-align:left}
 .provenance cite{font-style:italic}
 
@@ -167,6 +163,8 @@ figure.hero img{border:1px solid var(--rule)}
 .meter.hero .seg i{background:var(--accent)}
 .meter-stages{display:flex;gap:3px;margin:.4rem 0 0;font-size:.8rem;color:var(--muted)}
 .meter-stages span{flex:1}
+.meter-stages b{display:block;font-family:var(--mono);font-weight:400;
+  font-size:.92em;color:var(--quiet);margin-top:.12rem}
 .rubric-note{font-size:.96rem;line-height:1.6;color:var(--muted);margin:1.5rem 0 0}
 @media (prefers-reduced-motion:no-preference){
   .seg i{transition:transform .85s cubic-bezier(.2,.6,.3,1);transition-delay:calc(var(--i,0)*80ms)}
@@ -416,7 +414,7 @@ footer cite{font-style:italic}
       <img src="media/setup-workspace.jpg" alt="The UR5e workspace: arm with Robotiq Hand-E gripper on a 125 by 110 cm board, the shoulder camera on an extrusion pole at the back-left, with the shoulder and wrist camera views inset." loading="eager" width="1800" height="1296">
       <figcaption><b>The rig.</b> UR5e, Robotiq Hand-E, 2 RealSense cameras. The insets are the only view the policy ever gets.</figcaption>
     </figure>
-    <p class="abstract">This started as a master's thesis on adapting one of these models to a robot arm that no checkpoint matched. 8 months later, here is what worked, what did not, and what never turns up in a paper. Research articles report the configuration that worked. They rarely report the runs that did not, the default values that quietly sabotage a small fine-tune, or the settings that sit outside training altogether and still decide whether anything moves. Those are the parts that decide whether a policy runs on your hardware, in your room.</p>
+    <p class="abstract">This started as a master's thesis on adapting one of these models to a robot arm that no checkpoint matched, and 8 months later this is what worked, what did not, and what never turns up in a paper. Research articles report the configuration that worked, but rarely the runs that failed, the default values that quietly sabotage a small fine-tune, or the settings that sit outside training altogether and still decide whether the arm moves at all.</p>
     <div class="rubric">
       <p class="grouplabel">Headline results</p>
       <div class="meter hero">
@@ -427,7 +425,7 @@ footer cite{font-style:italic}
           <span class="seg" style="--i:2"><i style="--f:.8"></i></span>
           <span class="seg" style="--i:3"><i style="--f:.4"></i></span>
         </div>
-        <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
+        <div class="meter-stages"><span>Reach<b>5/5</b></span><span>Pick<b>5/5</b></span><span>Transport<b>4/5</b></span><span>Release<b>2/5</b></span></div>
       </div>
       <div class="meter">
         <div class="meter-head"><span class="meter-label">Mean of 17 out-of-distribution conditions</span><span class="meter-value">0.40</span></div>
@@ -439,7 +437,7 @@ footer cite{font-style:italic}
         </div>
         <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
       </div>
-      <p class="rubric-note">Every trial scores 4 sequential stages, 0.25 each. Task progress is not a success rate. It is how far along the chain the arm gets before it stops. The top bar shows the real per-stage rates in distribution. The lower bar is a mean across 17 conditions, so it fills to 0.40 rather than showing stage rates: out of distribution the arm often reached transport, and never release.</p>
+      <p class="rubric-note">Every trial scores 4 sequential stages, 0.25 each. Task progress is not a success rate. It is how far along the chain the arm gets before it stops. The top bar shows how many of the 5 in-distribution trials reached each stage, so transport at 4 of 5 means one trial was lost before it. The lower bar is a mean across 17 conditions, so it fills to 0.40 rather than showing stage rates: out of distribution the arm often reached transport, and never release.</p>
     </div>
     <nav class="toc" aria-label="Contents">
       <h2>Contents</h2>
@@ -497,11 +495,11 @@ footer cite{font-style:italic}
       </table>
     </div>
 
-    <p>Read the zero-shot rows first. 4 studies tried it, and 3 scored exactly zero. The fourth is the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL Lab at the University of Pennsylvania</a>, who reached 42% average task progress across more than 300 trials. Theirs is the one case where the checkpoint already matched the hardware: they ran π₀-FAST-DROID on a Franka, and the DROID checkpoint was fine-tuned on a Franka. They described the model as refreshingly easy to set up.</p>
+    <p>4 studies tried zero-shot deployment, and 3 scored exactly zero. The fourth is the <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL Lab at the University of Pennsylvania</a>, who reached 42% average task progress across more than 300 trials. Theirs is the one case where the checkpoint already matched the hardware: they ran π₀-FAST-DROID on a Franka, and the DROID checkpoint was fine-tuned on a Franka. They described the model as refreshingly easy to set up.</p>
 
     <p>I had a UR5e, and there is no UR5e checkpoint. UR5e data sits somewhere in the π₀.₅ pre-training mix, but only as a small share. The base model has no notion of my workstation, my cameras, my table-mounted bin, or my task. Zero-shot produced nothing usable. The arm moved without any goal-directed structure, and the gripper twitched occasionally.</p>
 
-    <p>So the ladder of adaptation effort runs roughly like this. Best case, a checkpoint already exists for your exact hardware. Next, your embodiment is a large share of pre-training. Worst case, it appears only as a small share. I was on the bottom rung, and getting from there to a policy that could pick up a block took 87 training runs and 33.8 GPU-hours. Most were exploratory: not 87 attempts at one recipe, but how I worked out which settings mattered at all.</p>
+    <p>So the ladder of adaptation effort runs roughly like this. Best case, a checkpoint already exists for your exact hardware. Next, your embodiment is a large share of pre-training, then a small share. Worst case it does not appear at all. I was near the bottom, with UR5e data present but rare, and getting from there to a policy that could pick up a block took 87 training runs and 33.8 GPU-hours. Most were exploratory: not 87 attempts at one recipe, but how I worked out which settings mattered at all.</p>
   </div>
 </section>
 
@@ -510,14 +508,12 @@ footer cite{font-style:italic}
     <h2><span class="n">2.</span> When you get stuck, does anyone help?</h2>
     <p>The problems people actually hit appear in issue trackers, and they repeat with striking consistency.</p>
     <ul>
-      <li><b>The pick never completes.</b> <a href="https://github.com/Physical-Intelligence/openpi/issues/906">One user</a> fine-tuned π₀.₅ on 138 episodes of pick-and-place. The loss came down. The controller followed the predicted pose to within a centimetre. The robot never completed the pick.</li>
-      <li><b>Normalisation statistics may destroy the policy silently.</b> One user's π₀.₅ fine-tune <a href="https://github.com/Physical-Intelligence/openpi/issues/711">scored 1% on LIBERO where the released checkpoint scores 96%</a>, and mismatched normalisation statistics are the leading suspect. The issue is unresolved.</li>
+      <li><b>The grasp never completes.</b> <a href="https://github.com/Physical-Intelligence/openpi/issues/906">One user</a> fine-tuned π₀.₅ on 138 episodes of pick-and-place. The loss came down. The controller followed the predicted pose to within a centimetre. The robot never completed the pick.</li>
+      <li><b>Normalisation statistics may destroy the policy silently.</b> One user's π₀.₅ fine-tune <a href="https://github.com/Physical-Intelligence/openpi/issues/711">scored 1% on LIBERO where the released checkpoint scores 96%</a>, and mismatched normalisation statistics are the leading suspect.</li>
       <li><b>Reimplementations do not match.</b> The <a href="https://huggingface.co/blog/danaaubakirova/pi0fast-issues">LeRobot PyTorch port of π₀-FAST</a> reached 30–60% on LIBERO against the paper's 80%. Nobody identified the cause.</li>
       <li><b>Phrasing changes everything.</b> The <a href="https://penn-pal-lab.github.io/Pi0-Experiment-in-the-Wild/">Penn PAL group</a> scored 0% on <em>"Close the toilet"</em> and 100% on <em>"Close the white lid of the toilet"</em>. Same model, same robot, same task.</li>
     </ul>
     <p class="lede">I hit the gripper failure, then the normalisation failure, then the phrasing sensitivity. So I pulled every issue from three of the most-used open VLA repositories, <a href="https://github.com/Physical-Intelligence/openpi">openpi</a>, <a href="https://github.com/openvla/openvla">OpenVLA</a> and <a href="https://github.com/huggingface/lerobot">lerobot</a>, and asked the question that actually matters when you are stuck at midnight: does anyone help, and is the help any good?</p>
-
-    <p>Working out who counts as "the project" is harder than it looks. GitHub only marks a commenter as a member when their organisation membership is public, and both <a href="https://github.com/Physical-Intelligence">Physical Intelligence</a> and the <a href="https://github.com/openvla">OpenVLA group</a> keep theirs private, so their staff appear as strangers. Counting commits instead is closer, but it misses people who answer constantly and rarely commit code. On openpi that includes Sergey Levine. Reading the threads and adding those people moves the no-reply-from-the-project figure from 67% to 61%, which is a large enough swing that any single number here deserves suspicion.</p>
 
     <p class="tcap">Table 2. Outcomes across 2,124 user-opened issues. Issues opened by the projects themselves are excluded.</p>
     <div class="tscroll">
@@ -542,31 +538,29 @@ footer cite{font-style:italic}
 
     <p>The pattern is not what I expected. Questions with a concrete broken thing attached, a stack trace, a robot that will not move, mostly get answered. Questions about why the model behaves as it does, or asking for something to be released, mostly do not. That is a reasonable way for a busy team to triage, and it also means the further your problem sits from a reproducible error, the more you are on your own.</p>
 
-    <p>What the trackers cannot tell you is how many of those answers were right. My grading measures whether a reply looks like it would help, not whether it did. 2 accounts in the openpi tracker post templated, plausible-sounding diagnoses across 5 to 8 unrelated issues while promoting their own tools, and they inflate any count of "somebody replied".</p>
+    <p>Those grades come with a caveat worth stating plainly: they measure whether a reply looks like it would help, not whether it actually did. Almost nobody comes back to a thread to confirm that a suggested fix worked, so a confident answer and a correct one score the same. 2 accounts in the openpi tracker post the same generic diagnosis across 5 to 8 unrelated issues while pointing at their own tools, which means some of what counts here as "somebody replied" is not help at all.</p>
 
     <figure class="wide">
       <div class="smallmult"><svg class="chartanim" style="--len:149" viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for openpi"><text x="44" y="12" class="ct">openpi</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M103.3,48.2 L123.1,46.1 L142.9,102.0 L162.7,122.7 L182.4,128.0 L202.2,128.0" class="cline accent"/><circle cx="103.3" cy="48.2" r="2.6" class="cdot" style="--dd:0.45s"/><circle cx="123.1" cy="46.1" r="2.6" class="cdot" style="--dd:0.55s"/><circle cx="142.9" cy="102.0" r="2.6" class="cdot" style="--dd:0.65s"/><circle cx="162.7" cy="122.7" r="2.6" class="cdot" style="--dd:0.75s"/><circle cx="182.4" cy="128.0" r="2.6" class="cdot" style="--dd:0.85s"/><circle cx="202.2" cy="128.0" r="2.6" class="cdot" style="--dd:0.95s"/><text x="44" y="150" class="cl tick">2025Q1</text><text x="222" y="150" class="cl tick" text-anchor="end">2026Q2</text><text x="206.2" y="131.0" class="cv accent">0%</text></svg><svg class="chartanim" style="--len:162" viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for OpenVLA"><text x="44" y="12" class="ct">OpenVLA</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M63.8,37.6 L83.6,41.8 L103.3,120.1 L123.1,128.0 L142.9,128.0 L162.7,128.0" class="cline accent"/><circle cx="63.8" cy="37.6" r="2.6" class="cdot" style="--dd:0.45s"/><circle cx="83.6" cy="41.8" r="2.6" class="cdot" style="--dd:0.55s"/><circle cx="103.3" cy="120.1" r="2.6" class="cdot" style="--dd:0.65s"/><circle cx="123.1" cy="128.0" r="2.6" class="cdot" style="--dd:0.75s"/><circle cx="142.9" cy="128.0" r="2.6" class="cdot" style="--dd:0.85s"/><circle cx="162.7" cy="128.0" r="2.6" class="cdot" style="--dd:0.95s"/><text x="44" y="150" class="cl tick">2024Q3</text><text x="222" y="150" class="cl tick" text-anchor="end">2025Q4</text><text x="166.7" y="131.0" class="cv accent">0%</text></svg><svg class="chartanim" style="--len:223" viewBox="0 0 230 160" role="img" aria-label="Quarterly project reply rate for lerobot"><text x="44" y="12" class="ct">lerobot</text><line x1="44" y1="128.0" x2="222" y2="128.0" class="cgrid"/><text x="38" y="131.0" class="cl" text-anchor="end">0</text><line x1="44" y1="75.0" x2="222" y2="75.0" class="cgrid"/><text x="38" y="78.0" class="cl" text-anchor="end">50</text><line x1="44" y1="22.0" x2="222" y2="22.0" class="cgrid"/><text x="38" y="25.0" class="cl" text-anchor="end">100%</text><path d="M44.0,25.0 L63.8,43.7 L83.6,69.1 L103.3,75.5 L123.1,77.8 L142.9,77.5 L162.7,61.3 L182.4,75.4 L202.2,86.4 L222.0,109.1" class="cline accent"/><circle cx="44.0" cy="25.0" r="2.6" class="cdot" style="--dd:0.45s"/><circle cx="63.8" cy="43.7" r="2.6" class="cdot" style="--dd:0.51s"/><circle cx="83.6" cy="69.1" r="2.6" class="cdot" style="--dd:0.56s"/><circle cx="103.3" cy="75.5" r="2.6" class="cdot" style="--dd:0.62s"/><circle cx="123.1" cy="77.8" r="2.6" class="cdot" style="--dd:0.67s"/><circle cx="142.9" cy="77.5" r="2.6" class="cdot" style="--dd:0.73s"/><circle cx="162.7" cy="61.3" r="2.6" class="cdot" style="--dd:0.78s"/><circle cx="182.4" cy="75.4" r="2.6" class="cdot" style="--dd:0.84s"/><circle cx="202.2" cy="86.4" r="2.6" class="cdot" style="--dd:0.89s"/><circle cx="222.0" cy="109.1" r="2.6" class="cdot" style="--dd:0.95s"/><text x="44" y="150" class="cl tick">2024Q2</text><text x="222" y="150" class="cl tick" text-anchor="end">2026Q3</text><text x="226.0" y="112.1" class="cv accent">18%</text></svg></div>
       <figcaption><b>Both research-lab projects were responsive at launch, then stopped.</b> lerobot, company-staffed, held near half. Its last quarter is still open.</figcaption>
     </figure>
 
-    <p>Some of that is ordinary academic life. A paper ships, students graduate, and the repository becomes an artefact rather than a product. No maintainer owes anybody free support.</p>
-
     <p><a href="https://github.com/Physical-Intelligence/openpi/issues/912">Issue 912</a> is the one I keep returning to, because it is my own failure written by someone else. A user fine-tunes π₀.₅, the arm reaches the object and lines up, then emits near-zero actions and pushes it instead of grasping. 2 more people report the identical symptom on their own setups, one in simulation. Nobody from Physical Intelligence has ever replied. One commenter offers a plausible hypothesis about gripper normalisation but never confirms a fix. Still open. Of the grasping issues I could find in the tracker, not one reaches a confirmed fix.</p>
 
-    <div class="callout">I spent weeks on gripper behaviour that 3 other people were reporting at the same time. <b>Reading the tracker would have cost me an afternoon. On these base rates, posting to it would most likely have bought me nothing.</b></div>
+    <div class="callout">I spent weeks on gripper behaviour that 3 other people were reporting at the same time. <b>Reading the tracker would not have fixed it, because nobody has fixed it. It would have told me in an afternoon that the wall was not mine alone, and saved me weeks of looking for my own mistake.</b></div>
   </div>
 </section>
 
 <section id="s3">
   <div class="wrap">
     <h2><span class="n">3.</span> Before any of that: getting the arm to talk to the model</h2>
-    <p class="lede">All 3 frameworks I looked at document the same 4 steps: install, convert your data, train, serve a policy. None of them ships the layer between a served action vector and a joint that turns. On a supported platform that layer exists already. A UR5e is not on LeRobot's native list, so I wrote it: the recorder, the converter, and the bridge. If I rebuilt it today I would make it modular and base it on LeRobot, because what I have works and is welded to one arm.</p>
+    <p class="lede">All 3 frameworks I looked at document the same 4 steps: install, convert your data, train, serve a policy. None of them ships the layer between a served action vector and a joint that turns. On a supported platform that layer exists already. A UR5e is on neither LeRobot's nor openpi's native list, so I wrote it: the recorder, the converter, and the bridge. If I rebuilt it today I would make it modular and base it on LeRobot, because what I have works and is welded to one arm.</p>
 
     <h3>Put the cameras where the model's training data had them</h3>
-    <p>This is the most useful thing I did and it took an afternoon. Before mounting anything I went through Physical Intelligence's blog posts and papers for photographs of their workspaces, and copied that geometry as closely as my table allowed. A fine-tune on 10 episodes will not teach the model a new viewpoint. Section 8 prices the mistake. Check whether the model wants RGB or depth before you buy, reuse the framework's own image preprocessing rather than writing your own, and fix the exposure so it cannot drift between recording and deployment.</p>
+    <p>This is the most useful thing I did and it took an afternoon. Before mounting anything I went through Physical Intelligence's blog posts and papers for photographs of their workspaces, and copied that geometry as closely as my table allowed.</p>
 
     <h3>The gripper is the part that fights you</h3>
-    <p>The arm moved almost immediately. Good motion took weeks, and a completed task took weeks more. That escalation, not any single obstacle, is the shape of the project. The gripper owns the ugly middle: it does not speak RTDE at all, but listens on its own TCP socket behind a URCap on the pendant. A second protocol on a second connection, for one robot, whose failure mode is silence rather than an error. The cable that feeds the wrist camera is the other quiet hazard, since it has to carry the stream while leaving slack for the arm's full reach.</p>
+    <p>The first policies showed signs of learning without doing anything useful: move the block across the frame and the arm would rotate slightly towards it, but it never travelled there. Good motion took weeks, and a completed task took weeks more. That escalation, not any single obstacle, is the shape of the project. The gripper owns the ugly middle: it does not speak RTDE at all, but listens on its own TCP socket behind a URCap on the pendant. A second protocol on a second connection, for one robot, whose failure mode is silence rather than an error. The cable that feeds the wrist camera is the other quiet hazard, since it has to carry the stream while leaving slack for the arm's full reach.</p>
 
     <h3>Decide where inference runs before you need it to work</h3>
     <p>The split between training and inference is arithmetic, not preference: openpi wants more than 70 GB of VRAM to fully fine-tune and more than 8 GB to serve. My 16 GB laptop can serve and cannot train, so training went to a cluster and the policy server ran beside the robot. A rented remote GPU works too, at the price of latency, and the actions-per-call setting has to absorb whatever latency you have. Section 6 shows how far that one setting swings the result.</p>

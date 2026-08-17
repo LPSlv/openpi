@@ -35,9 +35,9 @@
   "description": "An account of adapting the π₀.₅ vision-language-action model to a Universal Robots UR5e: 87 training runs to a working policy, 17 out-of-distribution conditions from the ⋆-Gen taxonomy, and an analysis of 2,246 issues across three open VLA repositories.",
   "image": "https://lpslv.github.io/openpi/ur5/docs/figures/blog_og_card.png",
   "datePublished": "2026-08-13",
-  "dateModified": "2026-08-16",
+  "dateModified": "2026-08-17",
   "inLanguage": "en",
-  "wordCount": 4500,
+  "wordCount": 4000,
   "author": {
     "@type": "Person",
     "name": "Lenards Skrodelis",
@@ -395,7 +395,7 @@ footer cite{font-style:italic}
         <div class="byline">
       <span class="author">Lenards Skrodelis</span>
       <time datetime="2026-08-13">13 August 2026</time>
-      <span>19 min read</span>
+      <span>17 min read</span>
       <a href="https://github.com/LPSlv/openpi">Code</a>
     </div>
     <figure class="hero">
@@ -555,17 +555,17 @@ footer cite{font-style:italic}
 <section id="s4">
   <div class="wrap">
     <h2><span class="n">4.</span> What actually mattered across 87 runs</h2>
-    <p>Most of the 87 runs went into working out which settings mattered at all. The ones that moved the result were mostly <a href="https://github.com/Physical-Intelligence/openpi">openpi</a> defaults calibrated for a long pre-training run and quietly wrong for a 500-step fine-tune, and <code>warmup_steps</code> was the largest of them.</p>
+    <p>Most of the 87 runs went into working out which settings mattered at all. The ones that moved the result were mostly <a href="https://github.com/Physical-Intelligence/openpi">openpi</a> defaults calibrated for a long pre-training run and quietly wrong for a 500-step fine-tune.</p>
 
     <h3>warmup_steps = 50, not the inherited 1000</h3>
-    <p>openpi ramps the learning rate over the first 1000 steps, which is right for the 30,000-step runs the defaults were written for. A 500-step fine-tune ends inside the ramp, so the run never reaches the peak learning rate it was configured with and trains at a fraction of it throughout. Nothing in the loss curve shows this. Cutting the warmup to 50 steps was the single largest improvement available before a run started.</p>
+    <p>openpi ramps the learning rate over the first 1000 steps, which is right for the 30,000-step runs the defaults were written for. A 500-step fine-tune ends inside the ramp, so the run never reaches the peak learning rate it was configured with and trains at a fraction of it throughout.</p>
 
     <h3>Consider reloading the pretrained normalisation statistics</h3>
-    <p>The convention is to compute normalisation statistics from your own dataset. That is right for medium and large datasets and wrong for small fine-tunes. 10 episodes narrow the envelope to whatever joint poses those 10 episodes happened to cover, and anything slightly outside clips into the saturated tails. Reloading the statistics that ship with <code>pi05_base</code> for <code>ur5e</code> gives a much wider envelope, taken from far larger pre-training data. Reload them from the same embodiment you are training, and check the loaded ranges against your own recorded joint limits before you train: wrong statistics fail silently.</p>
+    <p>The convention is to compute normalisation statistics from your own dataset. That is right for medium and large datasets and wrong for small fine-tunes. 10 episodes narrow the envelope to whatever joint poses those 10 episodes happened to cover, and anything slightly outside clips into the saturated tails. Reloading the statistics that ship with <code>pi05_base</code> for <code>ur5e</code> gives a much wider envelope, taken from far larger pre-training data. Reload them from the same embodiment you are training, and check the loaded ranges against your own recorded joint limits before you train.</p>
 
     <h3>10 episodes beat 20, 30 and 50</h3>
     <p>This is the result I would least have predicted. 10 episodes, about 13 minutes of demonstrations, produced a deployable policy, and every larger dataset failed. The 20-episode set was recorded with more positional variance, which produced steeper approach angles, so the arm drove into the table and tripped the protective stop. The largest sets failed at the grasp, with the gripper output near zero wherever the object sat. Each got its own hyperparameter search after failing at the 10-episode settings, so this is not a tuning artefact.</p>
-    <p>The failure is visual: against the training images the gripper closes correctly, against the live camera feed it stays open. It overfits far earlier than the model learns accurate motion, so beyond 10 episodes no checkpoint has both a working trajectory and a working gripper. That is the tug of war. 7 remedies went into separating them, from smoothing the gripper ramps and oversampling the transition frames to freezing the visual backbone and thresholding the command at inference. None made the gripper close on the robot. At this scale a narrow dataset covering the deployment condition beat a varied one, though this cannot separate episode count from composition.</p>
+    <p>The failure is visual: against the training images the gripper closes correctly, against the live camera feed it stays open. It overfits far earlier than the model learns accurate motion, so beyond 10 episodes no checkpoint has both a working trajectory and a working gripper. That is the tug of war. 7 remedies went into separating them, from smoothing the gripper ramps and oversampling the transition frames to freezing the visual backbone and thresholding the command at inference. None made the gripper close on the robot. At this scale a narrow dataset covering the deployment condition beat a varied one.</p>
 
     <figure>
       <img src="ur5/docs/figures/eval_dataset_size.png" alt="Bar chart of average task progress against fine-tuning dataset size, peaking at ten episodes." loading="lazy" width="2117" height="1513">
@@ -585,7 +585,6 @@ footer cite{font-style:italic}
         <dt>horizon</dt><dd>execute 6 of 15 predicted actions</dd>
       </dl>
     </div>
-    <p>2 things in that list look like infrastructure and are actually part of the policy. The reset pose the bridge moves to before each trial has to match the first frame of the training episodes within a few degrees, or the policy starts by extrapolating. And the prompt must lexically match a task label seen in training: <em>"Pick up the blue block and place it in the cardboard box"</em> works, <em>"Grab the blue block and put it in the box"</em> measurably degrades it.</p>
   </div>
 </section>
 
@@ -593,7 +592,7 @@ footer cite{font-style:italic}
   <div class="wrap">
     <h2><span class="n">5.</span> The training loss cannot tell you when to stop</h2>
     <p>With a checkpoint every 30 steps, the shape of training becomes visible on the robot. It is not the shape the loss suggests.</p>
-    <p>At step 120 the policy scored zero, stopping about 15 cm short of the block. At step 150 it worked: 0.80 in-distribution, and 0.70 out-of-distribution, which means it generalised to block positions it had never seen. At step 210 the in-distribution score was still 0.75 and the out-of-distribution score had collapsed to 0.25, with every trial failing at the pick. The training loss gave no warning: it sat low and flat across the whole window, and at step 210 it was no higher than at 150.</p>
+    <p>At step 120 the policy scored zero, stopping about 15 cm short of the block. At step 150 it worked: 0.80 in-distribution, and 0.70 out-of-distribution, which means it generalised to block positions it had never seen. At step 210 the in-distribution score was still 0.75 and the out-of-distribution score had collapsed to 0.25, with every trial failing at the pick.</p>
 
     <figure>
       <img src="ur5/docs/figures/eval_id_vs_ood.png" alt="Grouped bar chart of in-distribution and out-of-distribution task progress across checkpoints with the training loss overlaid." loading="lazy" width="2899" height="2082">
@@ -601,15 +600,12 @@ footer cite{font-style:italic}
     </figure>
 
     <p>My reading is that the model first learns the structure of the task, reach, grasp, transport, release, and later memorises the joint trajectories that work for the training positions. Behaviour-cloning loss measures how closely predicted actions match the demonstrations, so it cannot see the difference: matching them more exactly is what overfitting looks like.</p>
-    <p>The same failure appears at its limit in a two-stage experiment: 10,000 steps on a public 800-episode dataset from a different task and workstation, then 300 steps on my 10 episodes. The result drove the arm to the same joint configuration every trial, whatever the block position or the prompt. Warm-starting from an earlier stage-one checkpoint changed nothing, which points at the small second stage rather than an over-baked first.</p>
     <p>The policy also got faster as it memorised. The mean time to complete the pick fell from 2:37 at step 150 to 0:26 at step 210, which is consistent with an arm going directly to positions it had already seen instead of searching for the object.</p>
 
     <figure>
       <img src="ur5/docs/figures/eval_timing.png" alt="Grouped bar chart of mean trial duration per stage across checkpoints, in and out of distribution." loading="lazy" width="2573" height="2069">
       <figcaption><b>The policy got faster as it memorised, then stopped gripping.</b> Step-210 out-of-distribution is a reach-only bar.</figcaption>
     </figure>
-
-    <div class="callout"><b>You cannot validate a fine-tune offline.</b> The only instrument that detects this is out-of-distribution evaluation on the physical robot, which means deciding your conditions and keeping your intermediate checkpoints before you start training.</div>
   </div>
 </section>
 
@@ -620,7 +616,7 @@ footer cite{font-style:italic}
 
     <figure>
       <img src="ur5/docs/figures/eval_horizon.png" alt="Bar chart of task progress against the number of actions executed per inference call, forming an inverted U peaking at six." loading="lazy" width="2447" height="1513">
-      <figcaption><b>On my setup the optimum sat at 6 of 15, not at the horizon. Expect it to move with your inference latency.</b> Step-150 checkpoint, 5 trials each. K = 15 plays the whole predicted chunk.</figcaption>
+      <figcaption><b>On my setup the optimum sat at 6 of 15, not at the horizon.</b></figcaption>
     </figure>
 
     <p>Both ends fail at the grasp, for opposite reasons. Too short and the policy re-queries before the gripper finishes closing, overwriting its own command mid-actuation. Too long and it commits to a plan built from an observation that has gone stale. Training optimises the model to predict 15 coherent steps from one observation, but deployment hands it a new observation at every replan, and that new information outweighs the cost of throwing most of the chunk away.</p>
@@ -629,10 +625,8 @@ footer cite{font-style:italic}
         <source src="media/policy-run.mp4" type="video/mp4">
         Your browser cannot play this video.
       </video>
-      <figcaption><b>Out of distribution, at 4× speed.</b> The first grasp fails and rotates the screwdriver. The policy sees the new position on its next observation and retries. That recovery falls out of replanning every 6 actions.</figcaption>
+      <figcaption><b>Out of distribution, at 4× speed.</b> The first grasp fails and rotates the screwdriver. The policy sees the new position on its next observation and retries.</figcaption>
     </figure>
-
-    <p>This matters beyond one number. The swing from 0.25 to 0.80 is larger than anything I achieved by changing the training configuration, and no metric I had during training would have revealed it. The inference configuration is part of the model, so log it with every evaluation result.</p>
   </div>
 </section>
 
@@ -659,7 +653,7 @@ footer cite{font-style:italic}
     </div>
 
     
-    <p>Testing on real hardware is rarer and more expensive. The ⋆-Gen authors ran their trials across 2 case studies, Bridge V2 and ALOHA 2, and no model held up reliably on most axes. RoboChallenge is the closest comparison to my own setup, because its 30 tasks include a UR5.</p>
+    <p>Testing on real hardware is rarer and more expensive. The <a href="https://stargen-taxonomy.github.io/">⋆-Gen</a> authors ran their trials across 2 case studies, Bridge V2 and ALOHA 2, and no model held up reliably on most axes. RoboChallenge is the closest comparison to my own setup, because its 30 tasks include a UR5.</p>
 
     <figure class="small">
       <img src="media/stargen-results.jpg" alt="Bar chart from the star-Gen paper showing task progress across generalisation axes on Bridge V2, with most axes far below the in-distribution baseline." loading="lazy" width="580" height="659">
@@ -685,21 +679,21 @@ footer cite{font-style:italic}
 
     <figure class="small">
       <img src="media/shoulder-viewpoints.png" alt="Top-view diagram of the workspace showing three shoulder-camera positions: default at the back-left, back-right, and front-left." loading="lazy" width="925" height="854">
-      <figcaption><b>The 3 shoulder-camera positions.</b> Cam 1 is where every episode was recorded. Back-right cost 15 points, front-left cost 55.</figcaption>
+      <figcaption><b>The 3 shoulder-camera positions.</b></figcaption>
     </figure>
 
     <ul class="outcomes">
       <li>
         <h4>Held up</h4>
-        <p>A different gripper entirely, the Robotiq 2F-85 in place of the Hand-E, scored 75%. The block raised on a platform scored 75%, and added clutter scored 65%. A white block with an instruction naming it scored 75%. The gripper result surprised me most. The gripper is visible in every wrist-camera frame, so the policy could easily have bound its behaviour to how it looks, and it did not.</p>
+        <p>Changing the gripper barely mattered: a Robotiq 2F-85 in place of the Hand-E scored 75%, against 80% in training. That is the surprise of the whole set, because the gripper fills every wrist-camera frame the policy ever saw and it could easily have keyed on how its own hand looks. Raising the block on a platform also scored 75%, a white block named in the instruction 75%, and added clutter 65%.</p>
       </li>
       <li>
         <h4>Degraded</h4>
-        <p>Object shape cost 15 to 35 points: a taller block 65%, a triangular prism 55%, a cylinder 45%. Camera moves were worse and asymmetric: a back-right shoulder shift still reached transport at 65%, a front-left shift dropped to 25%, and a wrist camera moved 2 cm across and 1 cm up to 25%. A white cloth on the table scored 35%, where reach succeeded every time and the grasp closed on 1 of 5 trials.</p>
+        <p>Changing the object's shape cost 15 to 35 points: a taller block 65%, a triangular prism 55%, a cylinder 45%. Moving a camera cost more, and unevenly. Shifting the shoulder camera back and right still reached transport at 65%, but shifting it forward and left dropped to 25%, and moving the wrist camera 2 cm across and 1 cm up dropped to 25% as well. Covering the table with a white cloth scored 35%: the arm reached the block every time and closed the grasp on 1 trial in 5.</p>
       </li>
       <li>
         <h4>Broke</h4>
-        <p>Covering either camera scored 0%. A different robot arm scored 0%. The language-conflict scene scored 10%: asked to pick up the white block with the trained blue block also in frame, the policy went to the blue block on 4 of 5 trials.</p>
+        <p>Covering either camera scored 0%, and so did a different robot arm. The clearest failure was language: asked to pick up the white block with the trained blue block also in frame, the policy went to the blue block on 4 trials in 5, scoring 10%.</p>
       </li>
     </ul>
 
@@ -711,29 +705,27 @@ footer cite{font-style:italic}
       <div class="figscroll"><img src="ur5/docs/figures/eval_rq2_all_images_5wide.png" alt="Grid of twelve photographs showing the out-of-distribution test scenes." loading="lazy" width="3254" height="2010"></div>
       <figcaption><b>1 factor changes per scene.</b> 12 of the 17 conditions.</figcaption>
     </figure>
-    <p>Laid out together, the scenes make the failure boundary look arbitrary, and that is the point. What mostly separates the conditions that held up from the ones that collapsed is how far each sits from the 10 episodes the policy was trained on. A human looking at these photographs would call all 17 the same task.</p>
   </div>
 </section>
 
 <section id="s9">
   <div class="wrap">
     <h2><span class="n">9.</span> Fine-tuning bought the trained condition, not the task</h2>
-    <p>Put the 2 numbers from the top of this page next to the literature. My policy averaged 0.40 across 17 out-of-distribution conditions. The Penn PAL Lab's π₀-FAST, with no fine-tuning at all, averaged 0.42 on hardware its checkpoint already matched. The 2 numbers are not directly comparable, since the tasks, the rubrics and the conditions all differ, but the order of magnitude is the point.</p>
-    <p>A fine-tuned policy, perturbed, lands at roughly the same task progress as an untuned policy on matched hardware. That is the honest summary of what 8 months bought. The trained condition improved a great deal, and the general ability to do the task did not transfer.</p>
-    <p>The other comparison is more encouraging. In-distribution, 10 episodes, about 13 minutes of demonstrations, reached close to the level π₀ reached with a few hours of fine-tuning data in its <a href="https://arxiv.org/abs/2410.24164">own scaling study</a>. If your deployment condition is genuinely fixed, that is a very cheap way to get a working policy. If it is not fixed, nothing here supports extrapolating.</p>
+    <p>Put the 2 numbers from the top of this page next to the literature. In the condition it was trained for, the policy reached 0.80. Across 17 conditions that differed from training by one factor each, it averaged 0.40. The Penn PAL Lab's π₀-FAST, with no fine-tuning at all, averaged 0.42 on hardware its checkpoint already matched. Those numbers are not directly comparable, since the tasks, rubrics and conditions all differ, but the order of magnitude is the point: 8 months of adaptation bought a policy that, once perturbed, does about as well as an untuned policy on hardware that already suited it.</p>
+
+    <p>That is the finding, and it cuts both ways. Fine-tuning worked, and it worked cheaply: 10 episodes, about 13 minutes of demonstrations, reached in-distribution roughly what π₀ reached with a few hours of data in its <a href="https://arxiv.org/abs/2410.24164">own scaling study</a>. What it did not buy was the task. It bought the workspace, the camera positions, the object and the phrasing, all at once, and could not tell them apart from the job it was supposed to be learning.</p>
+
+    <p>So the practical question is not whether a VLA can be adapted to new hardware. It can, in a fortnight, on a laptop's worth of data. The question is whether your deployment condition is genuinely fixed. If it is, this is a cheap way to get a working policy. If anything moves, the camera most of all, nothing here supports expecting it to survive.</p>
 
     <h3>What I would do on day 1</h3>
     <p>All of this comes from one task, one object, one workspace, one arm and a single training seed, so treat it as a starting point rather than a law.</p>
     <ol>
       <li>Record <b>1</b> episode and train on it. It will not work, but if the arm does not move toward the object at all, something in your recording, conversion, serving or bridge is broken.</li>
-      <li>Set <code>warmup_steps=50</code> before your first real run. The default assumes a training budget 60 times larger than yours, so the learning rate never reaches the value you set. Save checkpoints often enough to have several to test.</li>
+      <li>Check the framework's training defaults against the length of run you can actually afford, and save checkpoints often enough to have several to test.</li>
       <li>Try reloading the pretrained normalisation statistics instead of computing fresh ones from a small dataset.</li>
-      <li>Record 10 consistent episodes rather than 50 varied ones.</li>
+      <li>Record a small, consistent set of demonstrations before a large, varied one.</li>
       <li>Evaluate every checkpoint on the robot in at least one out-of-distribution condition, and sweep the inference horizon before you conclude anything about the model.</li>
     </ol>
-    <h3>Write down what you find</h3>
-    <p>The run log and the trial tables from those 87 runs are in the repository, because the thing that cost me 8 months was not compute and it was not the model. It was that the answers existed and were not written down anywhere I could reach them.</p>
-    <p>So if you put one of these policies on hardware that has no checkpoint waiting for it, and you find something these notes do not cover, publish it. Section 2 is the measurement that makes the case: about 1 in 4 questions asked in the open get no reply from anyone. Papers report the runs that worked. Whether anything reports the rest is up to whoever writes next.</p>
   </div>
 </section>
 

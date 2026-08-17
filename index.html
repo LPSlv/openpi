@@ -149,18 +149,24 @@ figure.hero img{border:1px solid var(--rule)}
   font-size:.97rem;margin:0 0 .45rem}
 .meter-label{color:var(--muted)}
 .meter-value{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums}
-.meter-track{display:flex;gap:3px}
-.seg{position:relative;flex:1;height:.46rem;background:#eeeeee;overflow:hidden}
-.seg i{position:absolute;inset:0;background:#9a9a9a;transform:scaleX(var(--f,0));transform-origin:left center}
-.meter.hero .seg i{background:var(--accent)}
+.meter-track{position:relative;height:.62rem;background:#efefef;border-radius:2px}
+.meter-track .tick{position:absolute;top:0;bottom:0;left:calc(var(--t)*100%);width:1px;background:#fff;z-index:2}
+.meter-track .range{position:absolute;top:0;bottom:0;left:calc(var(--lo)*100%);
+  width:calc((var(--hi) - var(--lo))*100%);background:#d8d8d8;transform-origin:left center}
+.meter.hero .range{background:#bcd6cd}
+.meter-track .mean{position:absolute;top:-.22rem;bottom:-.22rem;left:calc(var(--m)*100%);
+  width:2px;margin-left:-1px;background:#5a5a5a;z-index:3}
+.meter.hero .mean{background:var(--accent)}
 .meter-stages{display:flex;gap:3px;margin:.4rem 0 0;font-size:.8rem;color:var(--muted)}
 .meter-stages span{flex:1}
 .meter-stages b{display:block;font-family:var(--mono);font-weight:400;
   font-size:.92em;color:var(--quiet);margin-top:.12rem}
 .rubric-note{font-size:.96rem;line-height:1.6;color:var(--muted);margin:1.5rem 0 0}
 @media (prefers-reduced-motion:no-preference){
-  .seg i{transition:transform .85s cubic-bezier(.2,.6,.3,1);transition-delay:calc(var(--i,0)*80ms)}
-  .meter:not(.lit) .seg i{transform:scaleX(0)}
+  .range{transition:transform .8s cubic-bezier(.2,.6,.3,1)}
+  .mean{transition:opacity .4s ease-out .35s}
+  .meter:not(.lit) .range{transform:scaleX(0)}
+  .meter:not(.lit) .mean{opacity:0}
 }
 
 /* ── sections ─────────────────────────────────────────── */
@@ -396,30 +402,28 @@ footer cite{font-style:italic}
       <img src="media/setup-workspace.jpg" alt="The UR5e workspace: arm with Robotiq Hand-E gripper on a 125 by 110 cm board, the shoulder camera on an extrusion pole at the back-left, with the shoulder and wrist camera views inset." loading="eager" width="1800" height="1296">
       <figcaption><b>The rig.</b> UR5e, Robotiq Hand-E, 2 RealSense cameras.</figcaption>
     </figure>
-    <p class="abstract">This started as a master's thesis on adapting a VLA to a robot arm that no checkpoint matched, and 8 months later this is what worked, what did not, and what never turns up in a paper. Research articles report the configuration that worked, but rarely the runs that failed, the default values that quietly sabotage a small fine-tune, or the settings that sit outside training altogether and still decide whether the arm moves at all.</p>
+    <p class="abstract">This started as a master's thesis on adapting a VLA to a new embodiment and environment, and measuring how far it generalises, and 8 months later this is what worked, what did not, and what never turns up in a paper. Research articles report the configuration that worked, but rarely the runs that failed.</p>
     <div class="rubric">
       <p class="grouplabel">Headline results</p>
       <div class="meter hero">
-        <div class="meter-head"><span class="meter-label">In-distribution</span><span class="meter-value">0.80</span></div>
+        <div class="meter-head"><span class="meter-label">In-distribution, 5 trials</span><span class="meter-value">0.80</span></div>
         <div class="meter-track">
-          <span class="seg" style="--i:0"><i style="--f:1"></i></span>
-          <span class="seg" style="--i:1"><i style="--f:1"></i></span>
-          <span class="seg" style="--i:2"><i style="--f:.8"></i></span>
-          <span class="seg" style="--i:3"><i style="--f:.4"></i></span>
-        </div>
-        <div class="meter-stages"><span>Reach<b>5/5</b></span><span>Pick<b>5/5</b></span><span>Transport<b>4/5</b></span><span>Release<b>2/5</b></span></div>
-      </div>
-      <div class="meter">
-        <div class="meter-head"><span class="meter-label">Mean of 17 out-of-distribution conditions</span><span class="meter-value">0.40</span></div>
-        <div class="meter-track">
-          <span class="seg" style="--i:0"><i style="--f:1"></i></span>
-          <span class="seg" style="--i:1"><i style="--f:.61"></i></span>
-          <span class="seg" style="--i:2"><i style="--f:0"></i></span>
-          <span class="seg" style="--i:3"><i style="--f:0"></i></span>
+          <span class="tick" style="--t:.25"></span><span class="tick" style="--t:.5"></span><span class="tick" style="--t:.75"></span>
+          <span class="range" style="--lo:.50;--hi:1"></span>
+          <span class="mean" style="--m:.80"></span>
         </div>
         <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
       </div>
-      <p class="rubric-note">Every trial scores 4 sequential stages, 0.25 each. Task progress is not a success rate. It is how far along the chain the arm gets before it stops. The top bar shows how many of the 5 in-distribution trials reached each stage, so transport at 4 of 5 means one trial was lost before it. The lower bar is a mean across 17 conditions, so it fills to 0.40 rather than showing stage rates: out of distribution the arm often reached transport, and never release.</p>
+      <div class="meter">
+        <div class="meter-head"><span class="meter-label">Out of distribution, 17 conditions</span><span class="meter-value">0.40</span></div>
+        <div class="meter-track">
+          <span class="tick" style="--t:.25"></span><span class="tick" style="--t:.5"></span><span class="tick" style="--t:.75"></span>
+          <span class="range" style="--lo:0;--hi:.75"></span>
+          <span class="mean" style="--m:.40"></span>
+        </div>
+        <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
+      </div>
+      <p class="rubric-note">Every trial scores 4 sequential stages, 0.25 each. Task progress is not a success rate. It is how far along the chain the arm gets before it stops. The marker is the mean and the band is the spread: across 5 trials in distribution, and across the 17 condition means out of distribution.</p>
     </div>
     <nav class="toc" aria-label="Contents">
       <h2>Contents</h2>

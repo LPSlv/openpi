@@ -150,23 +150,13 @@ figure.hero img{border:1px solid var(--rule)}
 .meter-label{color:var(--muted)}
 .meter-value{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums}
 .meter-track{position:relative;height:.62rem;background:#efefef;border-radius:2px}
-.meter-track .tick{position:absolute;top:0;bottom:0;left:calc(var(--t)*100%);width:1px;background:#fff;z-index:2}
-.meter-track .range{position:absolute;top:0;bottom:0;left:calc(var(--lo)*100%);
-  width:calc((var(--hi) - var(--lo))*100%);background:#d8d8d8;transform-origin:left center}
-.meter.hero .range{background:#bcd6cd}
-.meter-track .mean{position:absolute;top:-.22rem;bottom:-.22rem;left:calc(var(--m)*100%);
-  width:2px;margin-left:-1px;background:#5a5a5a;z-index:3}
-.meter.hero .mean{background:var(--accent)}
-.meter-stages{display:flex;gap:3px;margin:.4rem 0 0;font-size:.8rem;color:var(--muted)}
-.meter-stages span{flex:1}
-.meter-stages b{display:block;font-family:var(--mono);font-weight:400;
-  font-size:.92em;color:var(--quiet);margin-top:.12rem}
+.meter-track .fill{position:absolute;top:0;bottom:0;left:0;width:calc(var(--v)*100%);
+  background:#9a9a9a;transform-origin:left center}
+.meter.hero .fill{background:var(--accent)}
 .rubric-note{font-size:.96rem;line-height:1.6;color:var(--muted);margin:1.5rem 0 0}
 @media (prefers-reduced-motion:no-preference){
-  .range{transition:transform .8s cubic-bezier(.2,.6,.3,1)}
-  .mean{transition:opacity .4s ease-out .35s}
-  .meter:not(.lit) .range{transform:scaleX(0)}
-  .meter:not(.lit) .mean{opacity:0}
+  .fill{transition:transform .8s cubic-bezier(.2,.6,.3,1)}
+  .meter:not(.lit) .fill{transform:scaleX(0)}
 }
 
 /* ── sections ─────────────────────────────────────────── */
@@ -406,24 +396,14 @@ footer cite{font-style:italic}
     <div class="rubric">
       <p class="grouplabel">Headline results</p>
       <div class="meter hero">
-        <div class="meter-head"><span class="meter-label">In-distribution, 5 trials</span><span class="meter-value">0.80</span></div>
-        <div class="meter-track">
-          <span class="tick" style="--t:.25"></span><span class="tick" style="--t:.5"></span><span class="tick" style="--t:.75"></span>
-          <span class="range" style="--lo:.50;--hi:1"></span>
-          <span class="mean" style="--m:.80"></span>
-        </div>
-        <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
+        <div class="meter-head"><span class="meter-label">In the trained condition</span><span class="meter-value">0.80</span></div>
+        <div class="meter-track"><span class="fill" style="--v:.80"></span></div>
       </div>
       <div class="meter">
-        <div class="meter-head"><span class="meter-label">Out of distribution, 17 conditions</span><span class="meter-value">0.40</span></div>
-        <div class="meter-track">
-          <span class="tick" style="--t:.25"></span><span class="tick" style="--t:.5"></span><span class="tick" style="--t:.75"></span>
-          <span class="range" style="--lo:0;--hi:.75"></span>
-          <span class="mean" style="--m:.40"></span>
-        </div>
-        <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
+        <div class="meter-head"><span class="meter-label">Across 17 changed conditions</span><span class="meter-value">0.40</span></div>
+        <div class="meter-track"><span class="fill" style="--v:.40"></span></div>
       </div>
-      <p class="rubric-note">Every trial scores 4 sequential stages, 0.25 each. Task progress is not a success rate. It is how far along the chain the arm gets before it stops. The marker is the mean and the band is the spread: across 5 trials in distribution, and across the 17 condition means out of distribution.</p>
+      <p class="rubric-note">Task progress: how far along reach, pick, transport, release the arm gets before it stops, each stage worth 0.25. It is not a success rate. In the trained condition that is 5 trials; across the 17 changed conditions it is the mean of their means.</p>
     </div>
     <nav class="toc" aria-label="Contents">
       <h2>Contents</h2>

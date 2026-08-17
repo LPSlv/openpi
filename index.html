@@ -144,11 +144,14 @@ code{font-family:var(--mono);font-size:.86em;background:var(--faint);padding:.1e
   color:var(--quiet);font-weight:650;margin:0 0 calc(var(--rhythm)*.9);text-align:left}
 figure.hero{margin:0 0 calc(var(--rhythm)*1.4)}
 figure.hero img{border:1px solid var(--rule)}
-.meter{margin:0 0 1.4rem}
+.meter{margin:0 0 1.6rem}
 .meter-head{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
   font-size:.97rem;margin:0 0 .45rem}
 .meter-label{color:var(--muted)}
 .meter-value{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums}
+.meter-stages{display:flex;margin:.34rem 0 0;font-size:.76rem;color:var(--quiet);
+  letter-spacing:.01em}
+.meter-stages span{flex:1;text-align:center}
 .meter-track{position:relative;height:.8rem;background:#e4e4e4;border-radius:2px}
 .meter-track .err{position:absolute;top:50%;height:2px;margin-top:-1px;
   left:calc(var(--lo)*100%);width:calc((var(--hi) - var(--lo))*100%);
@@ -409,12 +412,14 @@ footer cite{font-style:italic}
       <div class="meter hero">
         <div class="meter-head"><span class="meter-label">In the trained condition</span><span class="meter-value">0.80</span></div>
         <div class="meter-track"><span class="tick" style="--t:.25"></span><span class="tick" style="--t:.5"></span><span class="tick" style="--t:.75"></span><span class="fill" style="--v:.80"></span><span class="err" style="--lo:.50;--hi:1"></span></div>
+        <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
       </div>
       <div class="meter">
         <div class="meter-head"><span class="meter-label">Across 17 changed conditions</span><span class="meter-value">0.40</span></div>
         <div class="meter-track"><span class="tick" style="--t:.25"></span><span class="tick" style="--t:.5"></span><span class="tick" style="--t:.75"></span><span class="fill" style="--v:.40"></span><span class="err" style="--lo:0;--hi:.75"></span></div>
+        <div class="meter-stages"><span>Reach</span><span>Pick</span><span>Transport</span><span>Release</span></div>
       </div>
-      <p class="rubric-note">Task progress: how far along reach, pick, transport, release the arm gets before it stops, each stage worth 0.25. It is not a success rate. The whisker is the range, across the 5 trials in the trained condition and across the 17 condition means below it.</p>
+      <p class="rubric-note">Task progress: how far along the 4 stages the arm gets before it stops, each worth 0.25. It is not a success rate. The whisker is the range, across the 5 trials in the trained condition and across the 17 condition means below it.</p>
     </div>
     <nav class="toc" aria-label="Contents">
       <h2>Contents</h2>

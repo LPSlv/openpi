@@ -504,7 +504,7 @@ footer cite{font-style:italic}
       </table>
     </div>
 
-    <p>Roughly a quarter of the people who report a problem get no response from anyone. That number is remarkably stable across all three projects, and it is the one I would take with me: if you post, the base rate of silence is about 1 in 4.</p>
+    <p>Roughly a quarter of the people who report a problem get no response from anyone. That number is remarkably stable across all three projects.</p>
     <p>The more interesting column is the middle one. On openpi, <b>32% of issues are answered only by other users</b>, with nobody from the project involved. I read 128 answered threads closely, staff-answered and user-answered alike, and graded the best reply in each: 55% contained a concrete fix or explanation that would plausibly unblock the reporter, another 29% a workaround or useful pointer. People outside the project, including reporters who worked out their own fix, supplied that best answer 44% of the time.</p>
 
     <figure class="wide">
@@ -521,7 +521,7 @@ footer cite{font-style:italic}
       <figcaption><b>Project reply rates fell steeply after the first 2 quarters.</b> Issues are grouped by the quarter they were opened in.</figcaption>
     </figure>
 
-    <p><a href="https://github.com/Physical-Intelligence/openpi/issues/912">Issue 912</a> is my own failure written by someone else: the arm reaches the object, lines up, then emits near-zero actions and pushes it instead of grasping. 2 more people report the identical symptom, and <a href="https://github.com/Physical-Intelligence/openpi/issues/906">another</a> fine-tuned π₀.₅ on 138 episodes with the loss coming down and the predicted pose tracking to within a centimetre, and still never completed the pick. As of 13 August 2026 no account I could identify as Physical Intelligence had replied, and of the grasping issues in the tracker, not one reaches a confirmed fix.</p>
+    <p><a href="https://github.com/Physical-Intelligence/openpi/issues/912">Issue 912</a> is my own failure written by someone else: the arm reaches the object, lines up, then emits near-zero actions and pushes it instead of grasping. 2 more people report the identical symptom, and <a href="https://github.com/Physical-Intelligence/openpi/issues/906">another</a> fine-tuned π₀.₅ on 138 episodes with the loss coming down and the predicted pose tracking to within a centimetre, and still never completed the pick.</p>
   </div>
 </section>
 
@@ -600,7 +600,7 @@ footer cite{font-style:italic}
 
     <figure>
       <img src="ur5/docs/figures/eval_timing.png" alt="Grouped bar chart of mean trial duration per stage across checkpoints, in and out of distribution." loading="lazy" width="2573" height="2069">
-      <figcaption><b>The policy got faster as it memorised, then stopped gripping.</b> Step-210 out-of-distribution is a reach-only bar.</figcaption>
+      <figcaption><b>The policy got faster as it memorised, then stopped gripping.</b></figcaption>
     </figure>
   </div>
 </section>
@@ -631,7 +631,7 @@ footer cite{font-style:italic}
     <h2><span class="n">7.</span> How the field measures generalisation, and what it misses</h2>
     <p class="lede">How does anyone else decide whether a policy generalises? The benchmarks trade cost against realism, and the cheap end has a saturation problem.</p>
 
-    <p>LIBERO, the standard simulated suite, no longer separates current models. LIBERO-PRO and LIBERO-Plus attack that saturation by perturbing the same scenes, and what they find is that a high LIBERO score can hide a brittle policy. SIMPLER spans 40 to 99% across setups, which makes comparing across papers difficult.</p>
+    <p>LIBERO, the standard simulated suite, is saturated: current models score above 95% on it, so it no longer tells them apart. LIBERO-PRO and LIBERO-Plus attack that saturation by perturbing the same scenes, and what they find is that a high LIBERO score can hide a brittle policy. SIMPLER spans 40 to 99% across setups, which makes comparing across papers difficult.</p>
 
     <p class="tcap">Table 3. Where generalisation gets measured.</p>
       <div class="tscroll">
@@ -649,7 +649,7 @@ footer cite{font-style:italic}
     </div>
 
     
-    <p>Testing on real hardware is rarer and more expensive. The <a href="https://stargen-taxonomy.github.io/">⋆-Gen</a> authors ran their trials across 2 case studies, Bridge V2 and ALOHA 2, and no model held up reliably on most axes. RoboChallenge is the closest comparison to my own setup, because its 30 tasks include a UR5.</p>
+    <p>Testing on real hardware is rarer and more expensive. The <a href="https://stargen-taxonomy.github.io/">⋆-Gen</a> authors ran their trials across 2 case studies, Bridge V2 and ALOHA 2, and no model held up reliably on most axes.</p>
 
     <figure class="small">
       <img src="media/stargen-results.jpg" alt="Bar chart from the star-Gen paper showing task progress across generalisation axes on Bridge V2, with most axes far below the in-distribution baseline." loading="lazy" width="580" height="659">

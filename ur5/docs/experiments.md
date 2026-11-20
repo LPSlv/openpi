@@ -1767,7 +1767,7 @@ cp -r assets/pi05_ur5/LPSlvlv/ur5_mixed_51 assets/pi0_ur5_ffer_then_mine/LPSlvlv
 
 Training commands:
 ```bash
-uv run scripts/train.py --config-name pi05_ur5_blueblock10 --exp-name=pi05_ur5_blueblock10-1
+uv run scripts/train.py pi05_ur5_blueblock10 --exp-name=pi05_ur5_blueblock10-1
 ```
 
 ---
@@ -1994,6 +1994,6 @@ Inference settings live in `ur5/docker/serve_policy_robot.Dockerfile` as environ
 
 - `SERVER_ARGS` (string passed to `serve_policy.py`). Specifies the policy class and checkpoint path. The current default points at `pi05_ur5_blueblock10-1/150`; changing this is how you swap deployed checkpoints.
 - `SERVER_WAIT` (seconds, default 6). How long the bridge waits after launching the policy server before connecting. 6 s is enough for JAX to JIT-compile the model on first call; bumps up to 60+ s if you forget to pre-compile.
-- `DRY_RUN` (0/1). When 1, the bridge logs intended joint commands without sending them to the robot. Useful for verifying camera + policy response without risking damage; we used it after every config change before authorizing real motion.
+- `DRY_RUN` (0/1). When 1, the bridge skips policy commands in the inference loop. Startup still moves the arm to its reset pose and can activate and open the gripper.
 
 **Why these matter.** Inference settings have zero effect on training loss, so a wandb dashboard cannot help you tune them. They are tuned by on-robot evaluation only. The horizon sweep shows just how big the effect can be: same model checkpoint, same dataset, same training config — `HORIZON_STEPS=6` gives 90% success, `HORIZON_STEPS=15` gives 25%. Practically: log the deployment-relevant env vars (`HORIZON_STEPS`, `HOLD_PER_STEP`, `PROMPT`, `SERVER_ARGS`) alongside every evaluation result, because the inference config is part of the model.

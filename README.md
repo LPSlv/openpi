@@ -12,7 +12,7 @@ Vision-language-action (VLA) models promise a single learned policy that adapts 
 
 ## Results
 
-**Adaptation was non-trivial.** Zero-shot deployment of the base checkpoint produced no usable behaviour on the UR5e, despite UR5e data being part of the π₀.₅ pre-training mix. Reaching a working policy required 87 training trials across the model variant, fine-tuning method, dataset size, training steps, batch size, learning rate, warm-up, normalisation source, action transform, and inference horizon (full search grid in [`ur5/docs/training.md`](ur5/docs/training.md)). The on-robot working window was narrow in training time: task progress peaked around step 150, and by step 210 the out-of-distribution score had collapsed while the training loss kept falling, so the loss does not reveal the overfitting and each checkpoint has to be checked on the robot. Trial duration also fell on the later checkpoints, as the arm moved more directly to positions it had seen.
+**Adaptation was non-trivial.** Zero-shot deployment of the base checkpoint produced no usable behaviour on the UR5e, despite UR5e data being part of the π₀.₅ pre-training mix. Reaching a working policy required 87 training trials across the model variant, fine-tuning method, dataset size, training steps, batch size, learning rate, warm-up, normalisation source, action transform, and inference horizon (run history in [`ur5/docs/experiments.md`](ur5/docs/experiments.md)). The on-robot working window was narrow in training time: task progress peaked around step 150, and by step 210 the out-of-distribution score had collapsed while the training loss kept falling, so the loss does not reveal the overfitting and each checkpoint has to be checked on the robot. Trial duration also fell on the later checkpoints, as the arm moved more directly to positions it had seen.
 
 <p align="center">
   <img src="ur5/docs/figures/eval_id_vs_ood.png" alt="Task progress and training loss across training steps." width="430">
@@ -58,7 +58,7 @@ UR5e arm, Robotiq Hand-E gripper, two RealSense cameras (one shoulder-mounted at
 |  |  |
 |---|---|
 | **Model** | π₀.₅ |
-| **Fine-tune** | Full, 150 steps, batch 16 |
+| **Fine-tune** | Full, checkpoint 150 of a 500-step budget, batch 16 |
 | **Action transform** | Absolute joint positions, converted to deltas at train/inference |
 | **Normalisation** | Reloaded base UR5e stats |
 | **Inference horizon** | *K* = 6 of *H* = 15 predicted actions per call |
@@ -73,8 +73,8 @@ UR5e arm, Robotiq Hand-E gripper, two RealSense cameras (one shoulder-mounted at
 
 | Doc | What's there |
 |-----|--------------|
-| [`ur5/docs/quickstart.md`](ur5/docs/quickstart.md) | End-to-end workflow: setup, record, train, deploy |
-| [`ur5/docs/training.md`](ur5/docs/training.md) | Training configs, norm stats, lessons learned |
+| [`ur5/docs/quickstart.md`](ur5/docs/quickstart.md) | Setup, recording, custom dataset training, deployment, and evaluation |
+| [`ur5/docs/training.md`](ur5/docs/training.md) | Study rerun, training configs, norm stats, and checkpoint transfer |
 | [`ur5/docs/deployment.md`](ur5/docs/deployment.md) | Docker policy server and robot bridge |
 | [`ur5/docs/experiments.md`](ur5/docs/experiments.md) | Per-experiment lab notebook |
 
